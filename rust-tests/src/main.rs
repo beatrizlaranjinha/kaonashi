@@ -90,7 +90,33 @@ async fn main() {
     println!("Owner alterado");
 
     // =========================
-    // 4. ler dados (get)
+    // 4. non-owner tenta mudar value (ERRO)
+    // =========================
+    let fake_owner = Keypair::new();
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+
+    let ix = Instruction {
+        program_id,
+        accounts: accounts::OnlyOwner {
+            data: data_account.pubkey(),
+            owner: fake_owner.pubkey(),
+        }
+        .to_account_metas(None),
+        data: instruction::SetValue { value: 99 }.data(),
+    };
+
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
+    tx.sign(&[&payer, &fake_owner], recent_blockhash);
+
+    let result = banks_client.process_transaction(tx).await;
+
+    match result {
+        Ok(_) => println!("ERRO: non-owner conseguiu alterar o value"),
+        Err(_) => println!("Teste OK: non-owner nao conseguiu alterar o value"),
+    }
+
+    // =========================
+    // 5. ler dados (get)
     // =========================
     let account = banks_client
         .get_account(data_account.pubkey())
