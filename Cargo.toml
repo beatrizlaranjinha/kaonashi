@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "programs/*"
-]
+, "rust-tests"]
 resolver = "2"
 
 [profile.release]
