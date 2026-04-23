@@ -5,6 +5,7 @@ declare_id!("89JzYW3Jpk7xAn8Mbgx3JLfH5xmN67Tp23VEUam7Q7eE");
 //equivalente ao contrato na solidity, at least i hope
 #[program]
 pub mod owner_project {
+
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {

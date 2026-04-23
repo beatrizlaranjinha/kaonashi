@@ -42,12 +42,26 @@ async fn main() {
     let mut tx = Transaction::new_with_payer(&[i], Some(&payer.pubkey())); //cria uma transação
     tx.sign(&[&payer, &voting_state_account], recent_blockhash); //a transição tem de ser paga pelo pauer e pela conta que esta a ser criada
                                                                  //Associa o blockhash mais recente
-    banks_client.process_transaction(tx).await.unwrap(); //envia para a blockchain local
+
+    match banks_client.process_transaction(tx).await {
+        Ok(_) => {}
+        Err(e) => {
+            println!("{e}");
+            return;
+        }
+    } //envia para a blockchain local
 
     println!("Initialize doneee");
+    println!("Owner antigo: {}", payer.pubkey());
 
     //set value
-    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+    let recent_blockhash = match banks_client.get_latest_blockhash().await {
+        Ok(h) => h,
+        Err(e) => {
+            println!("{e}");
+            return;
+        }
+    };
 
     let i = Instruction {
         program_id,
@@ -57,12 +71,18 @@ async fn main() {
             owner: payer.pubkey(),
         }
         .to_account_metas(None),
-        data: instruction::SetValue { value: 10 }.data(), //em vez de initialize muda o value
+        data: instruction::SetValue { value: 5 }.data(), //em vez de initialize muda o value
     };
 
     let mut tx = Transaction::new_with_payer(&[i], Some(&payer.pubkey()));
     tx.sign(&[&payer], recent_blockhash);
-    banks_client.process_transaction(tx).await.unwrap();
+    match banks_client.process_transaction(tx).await {
+        Ok(_) => {}
+        Err(e) => {
+            println!("{e}");
+            return;
+        }
+    };
 
     println!("Value mudado para 10");
 
@@ -75,7 +95,13 @@ async fn main() {
     let other_user = read_keypair_file("~/.config/solana/id.json")
         .expect("failed to read keypair"); */
 
-    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+    let recent_blockhash = match banks_client.get_latest_blockhash().await {
+        Ok(h) => h,
+        Err(e) => {
+            println!("{e}");
+            return;
+        }
+    };
 
     let i = Instruction {
         //Instrução para chamar change owner
@@ -93,7 +119,13 @@ async fn main() {
 
     let mut tx = Transaction::new_with_payer(&[i], Some(&payer.pubkey()));
     tx.sign(&[&payer], recent_blockhash); //cria a transação com o owner atual
-    banks_client.process_transaction(tx).await.unwrap(); //envia a transação para a blockchain atual
+    match banks_client.process_transaction(tx).await {
+        Ok(_) => {}
+        Err(e) => {
+            println!("{e}");
+            return;
+        }
+    }; //envia a transação para a blockchain atual
 
     println!("Owner alterado");
 
@@ -102,7 +134,13 @@ async fn main() {
     let fake_owner = Keypair::new();
     /*let fake_owner = read_keypair_file("~/.config/solana/id.json")
     .expect("failed to read keypair"); */
-    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+    let recent_blockhash = match banks_client.get_latest_blockhash().await {
+        Ok(h) => h,
+        Err(e) => {
+            println!("{e}");
+            return;
+        }
+    };
 
     let i = Instruction {
         program_id,
@@ -121,19 +159,32 @@ async fn main() {
 
     match result {
         Ok(_) => println!("isto não é suposto acontecerrrr"),
-        Err(_) => println!("yay funcionou"),
+        Err(_) => println!("non owner não altera o valor"),
     }
 
     // 5. ler dados (get)
 
-    let account = banks_client
+    let account = match banks_client
         .get_account(voting_state_account.pubkey()) //vai a blockchain e procura voting_state
         .await
-        .unwrap() //espera resultado async
-        .unwrap(); //garante que a conta existe
+    {
+        Ok(Some(a)) => a, //get account devolve um option
+        _ => {
+            println!("a conta não existe");
+            return;
+        }
+    };
+    /*  .unwrap() //espera resultado async
+    .unwrap(); //garante que a conta existe */
 
     let mut data_slice: &[u8] = &account.data; //Os dados vÊm como u[8],
-    let voting_state = VotingState::try_deserialize(&mut data_slice).unwrap(); //Converter para struct , bytes ficam VotingState {owner,value}
+    let voting_state = match VotingState::try_deserialize(&mut data_slice) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("{e}");
+            return;
+        }
+    }; //Converter para struct , bytes ficam VotingState {owner,value}
 
     println!("Owner atual: {}", voting_state.owner);
     println!("Value atual: {}", voting_state.value);
