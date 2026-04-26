@@ -109,7 +109,7 @@ pub mod owner_project {
             VotingError::InvalidProposal
         ); // verifica se o índice está dentro do número de propostas
 
-        // 🔹 guardar antes para evitar conflito de borrow
+        // guardar antes para evitar conflito de borrow
         let proposals_len = voting_state.proposals.len();
 
         let voter = match voting_state
