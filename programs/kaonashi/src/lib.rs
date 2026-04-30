@@ -23,29 +23,30 @@ pub mod owner_project {
             VotingError::TooManyProposals
         );
 
-        let ballot = &mut ctx.accounts.ballot; // vamos alterar os dados de ballot
-
-        ballot.chairperson = ctx.accounts.chairperson.key(); // endereço de quem criou a votação
-        ballot.proposal_count = proposals_names.len() as u8; // quantas propostas existem
-        ballot.proposals = Vec::new(); // cria uma lista vazia onde os nomes são adicionados no for
-        ballot.tally = [0; MAX_PROPOSALS]; // [0, 0, 0, 0, 0]; ninguém votou
-        ballot.final_winner_index = NO_FINAL_WINNER; // ainda não há vencedor final
-
-        for name in proposals_names {
+        // Valida todos os nomes das propostas usando iteradores.
+        proposals_names.iter().try_for_each(|name| -> Result<()> {
+            //para cada nome dentro do proposals name
             // Cada nome de proposta pode ter no máximo 32 bytes.
             require!(
                 name.as_bytes().len() <= MAX_PROPOSAL_NAME,
                 VotingError::ProposalNameTooLong
             );
 
-            // Os nomes das propostas ficam guardados on-chain.
-            // Exemplo: proposals = ["wine", "beer", "water"]
-            ballot.proposals.push(name);
-        }
+            Ok(())
+        })?;
+
+        let ballot = &mut ctx.accounts.ballot; // vamos alterar os dados de ballot
+
+        // Inicializa os campos principais da votação.
+        // Guarda o chairperson, o número de propostas, a lista de propostas,
+        // a contagem inicial dos votos e o estado do vencedor final.
+        ballot.init(
+            ctx.accounts.chairperson.key(), // endereço de quem criou a votação
+            proposals_names,                // nomes das propostas guardados on-chain
+        );
 
         Ok(())
     }
-
     // 2. O chairperson regista/autoriza um voter.
     // Isto cria uma conta PDA única para este voter nesta votação.
     pub fn register_voter(ctx: Context<RegisterVoter>, _voter_address: Pubkey) -> Result<()> {
@@ -162,6 +163,14 @@ pub struct Ballot {
 }
 
 impl Ballot {
+    pub fn init(&mut self, chairperson: Pubkey, proposals_names: Vec<String>) {
+        self.chairperson = chairperson; // endereço de quem criou a votação
+        self.proposal_count = proposals_names.len() as u8; // quantas propostas existem
+        self.proposals = proposals_names; // guarda os nomes das propostas on-chain
+        self.tally = [0; MAX_PROPOSALS]; // [0, 0, 0, 0, 0]; ninguém votou
+        self.final_winner_index = NO_FINAL_WINNER; // ainda não há vencedor final
+    }
+
     pub const SPACE: usize = 8 // discriminator Anchor
         + 32 // chairperson Pubkey
         + 4 + MAX_PROPOSALS * (4 + MAX_PROPOSAL_NAME) // Vec<String>: len + cada String
