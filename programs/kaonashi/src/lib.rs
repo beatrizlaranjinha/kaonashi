@@ -14,26 +14,32 @@ pub mod owner_project {
     // 1. Cria uma nova votação.
     // A conta Ballot é a conta global: guarda chairperson, propostas e contagem total.
     pub fn initialize(ctx: Context<Initialize>, proposals_names: Vec<String>) -> Result<()> {
+        // Não permite criar uma votação sem propostas.
         require!(!proposals_names.is_empty(), VotingError::NoProposals);
+
+        // Só permite no máximo 5 propostas.
         require!(
             proposals_names.len() <= MAX_PROPOSALS,
             VotingError::TooManyProposals
         );
 
         let ballot = &mut ctx.accounts.ballot; // vamos alterar os dados de ballot
+
         ballot.chairperson = ctx.accounts.chairperson.key(); // endereço de quem criou a votação
         ballot.proposal_count = proposals_names.len() as u8; // quantas propostas existem
         ballot.proposals = Vec::new(); // cria uma lista vazia onde os nomes são adicionados no for
         ballot.tally = [0; MAX_PROPOSALS]; // [0, 0, 0, 0, 0]; ninguém votou
-        ballot.final_winner_index = NO_FINAL_WINNER; // ainda não há vencedor
+        ballot.final_winner_index = NO_FINAL_WINNER; // ainda não há vencedor final
 
         for name in proposals_names {
+            // Cada nome de proposta pode ter no máximo 32 bytes.
             require!(
                 name.as_bytes().len() <= MAX_PROPOSAL_NAME,
                 VotingError::ProposalNameTooLong
             );
 
             // Os nomes das propostas ficam guardados on-chain.
+            // Exemplo: proposals = ["wine", "beer", "water"]
             ballot.proposals.push(name);
         }
 
@@ -43,7 +49,7 @@ pub mod owner_project {
     // 2. O chairperson regista/autoriza um voter.
     // Isto cria uma conta PDA única para este voter nesta votação.
     pub fn register_voter(ctx: Context<RegisterVoter>, _voter_address: Pubkey) -> Result<()> {
-        // _voter_address não é usado diretamente na função,
+        // _voter_address não é usado diretamente aqui dentro,
         // mas é usado nas seeds da PDA no Context RegisterVoter.
         let voter_record = &mut ctx.accounts.voter_record;
 
@@ -57,22 +63,17 @@ pub mod owner_project {
     // 3. Um voter autorizado vota numa proposta.
     // A contagem global é atualizada imediatamente no ballot.tally.
     pub fn cast_vote(ctx: Context<CastVote>, proposal_index: u8) -> Result<()> {
-        // Aqui estão guardadas as propostas e a contagem total dos votos.
+        //  propostas e a contagem total dos votos.
         let ballot = &mut ctx.accounts.ballot;
 
         // Conta PDA individual deste voter.
         // Aqui está guardado se pode votar, se já votou e em que proposta votou.
         let voter_record = &mut ctx.accounts.voter_record;
 
-        // Verifica se este voter foi autorizado pelo chairperson.
-        require!(voter_record.can_vote, VotingError::NotAllowedToVote);
+        require!(voter_record.can_vote, VotingError::NotAllowedToVote); //// Verifica se este voter foi autorizado pelo chairperson.
+        require!(!voter_record.has_voted, VotingError::AlreadyVoted); // Impede double voting.
 
-        // Isto impede double voting.
-        require!(!voter_record.has_voted, VotingError::AlreadyVoted);
-
-        // Verifica se o índice da proposta é válido.
-        // Exemplo: se há 3 propostas, os índices válidos são [0, 1, 2].
-        // Votar na proposta 3 não era válido.
+        //[0, 1 ,2] votar no 3 não é valido
         require!(
             proposal_index < ballot.proposal_count,
             VotingError::InvalidProposal
@@ -86,16 +87,19 @@ pub mod owner_project {
         // Isto evita overflow antes de fazer += 1.
         require!(ballot.tally[index] < u64::MAX, VotingError::VoteOverflow);
 
+        // Atualiza a conta individual do voter.
         voter_record.has_voted = true; // já votou
-        voter_record.vote = proposal_index; // guarda o índice da proposta em que este voter votou
+        voter_record.vote = proposal_index; // guarda o índice da proposta escolhida
 
-        ballot.tally[index] += 1; // atualiza a contagem global da proposta escolhida
+        // Atualiza a contagem global da proposta escolhida.
+        // Exemplo: se index = 1, então tally[1] aumenta em 1.
+        ballot.tally[index] += 1;
 
         Ok(())
     }
 
     // 4. Em caso de empate, só o chairperson pode escolher o vencedor final.
-    // O chairperson não vota normalmente; ele apenas resolve o empate.
+    // O chairperson não vota normalmente só desempata
     pub fn resolve_tie(ctx: Context<ResolveTie>, winning_index: u8) -> Result<()> {
         let ballot = &mut ctx.accounts.ballot;
 
@@ -109,19 +113,20 @@ pub mod owner_project {
         // active_tallies = [2, 2, 0]
         let active_tallies = &ballot.tally[..ballot.proposal_count as usize];
 
-        // Procura o maior número de votos dentro de active_tallies
+        // Procura o maior número de votos dentro de active_tallies.
+
         let max_votes = match active_tallies.iter().copied().max() {
             Some(value) => value, //encontrou o maior número de votos
             None => return Err(VotingError::NoProposals.into()), //não havia propostas para analisar
         };
 
-        // Conta quantas propostas têm o número máximo de votos.
+        // Conta quantas propostas têm o número máximo de votos para verificar empate
         let tied_count = active_tallies
             .iter()
-            .filter(|votes| **votes == max_votes) // List.filter (fun votes -> votes = max_votes) active_tallies
+            .filter(|votes| **votes == max_votes)
             .count();
 
-        // Se tied_count == 1, significa que só uma proposta tem o maior número de votos.
+        // Verifica se há mesmo empate.
         require!(tied_count > 1, VotingError::NoTieToResolve);
 
         // tally = [3, 3, 1]
@@ -132,6 +137,7 @@ pub mod owner_project {
         );
 
         // Guarda o índice da proposta escolhida como vencedora final.
+        // Isto não altera a contagem dos votos, apenas resolve o empate.
         ballot.final_winner_index = winning_index;
 
         // Mensagem para os logs da transação.
@@ -197,9 +203,12 @@ pub struct RegisterVoter<'info> {
     #[account(mut)]
     pub chairperson: Signer<'info>,
 
+    // Só o chairperson guardado dentro da Ballot pode registar voters.
     #[account(mut, has_one = chairperson)]
     pub ballot: Account<'info, Ballot>,
 
+    // Conta PDA única para este voter nesta votação.
+    // Isto faz com que o mesmo voter tenha uma conta diferente em cada eleição.
     #[account(
         init,
         payer = chairperson,
@@ -220,9 +229,11 @@ pub struct CastVote<'info> {
     #[account(mut)]
     pub ballot: Account<'info, Ballot>,
 
+    // No voto, a PDA é derivada com o endereço de quem está a assinar.
+    // Assim, o voter só consegue usar o seu próprio VoterRecord.
     #[account(
         mut,
-        seeds = [b"voter", ballot.key().as_ref(), voter.key().as_ref()], // o voter é único por votação
+        seeds = [b"voter", ballot.key().as_ref(), voter.key().as_ref()],
         bump
     )]
     pub voter_record: Account<'info, VoterRecord>,
@@ -232,12 +243,12 @@ pub struct CastVote<'info> {
 pub struct ResolveTie<'info> {
     pub chairperson: Signer<'info>,
 
+    // Só o chairperson guardado na Ballot pode resolver o empate.
     #[account(mut, has_one = chairperson)]
     pub ballot: Account<'info, Ballot>,
 }
 
 // Errors
-
 #[error_code]
 pub enum VotingError {
     #[msg("No proposals provided.")]
