@@ -1,191 +1,246 @@
 use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
-use solana_program_test::ProgramTest; //cria uma blockchain local de teste
-                                      // use solana_sdk::signature::read_keypair_file; //para usar com json
+use solana_program_test::ProgramTest; // cria uma blockchain local de teste
 use solana_sdk::{
-    instruction::Instruction,     //chama função do programa
-    signature::{Keypair, Signer}, //cria chaves e contas
-    transaction::Transaction,
+    instruction::Instruction, // representa uma chamada a uma função do programa
+    signature::{Keypair, Signer}, // cria contas/chaves e permite assinar transações
+    transaction::Transaction, // representa uma transação enviada para a blockchain
 };
 
-// importar o contrato
+// importa as contas, instruções e struct principal do contrato
 use kaonashi::{accounts, instruction, VotingState};
 
-#[tokio::main] //para funções assincronas
+#[tokio::main] // permite usar async/await no main
 async fn main() {
-    // id do programa
+    // ID do programa Anchor
     let program_id = kaonashi::id();
 
-    // usar o .so compilado
+    // Cria uma blockchain local de teste com o programa carregado
     let program_test = ProgramTest::new("kaonashi", program_id, None);
 
-    // arrancar blockchain local
-    let (banks_client, payer, recent_blockhash) = program_test.start().await;
+    // Arranca a blockchain local
+    // banks_client -> cliente para interagir com a blockchain
+    // payer -> conta principal que paga as transações
+    // recent_blockhash -> blockhash necessário para assinar a primeira transação
+    let (mut banks_client, payer, recent_blockhash) = program_test.start().await;
 
-    // conta onde guardamos os dados
-    let voting_state_account = Keypair::new(); //cria a pubkey do new owner do contrato
+    // Conta onde vai ficar guardado o estado da votação
+    let voting_state_account = Keypair::new();
 
-    //initialize -> cria uma instrução para chamar a função initialize do programa , indica as contas e dados
+    // initialize -> criar a votação com propostas
 
-    let i = Instruction {
-        //cria uma instrução para chamar initialize (guarda owner e value)
+    // Lista de propostas da votação
+    let proposals_names = vec!["wine".to_string(), "beer".to_string(), "water".to_string()];
+
+    // Cria a instrução para chamar initialize no contrato
+    let ix = Instruction {
         program_id,
         accounts: accounts::Initialize {
-            //diz ao programa que queremos começar uma instrução
-            voting_state: voting_state_account.pubkey(), //onde guarda o owner e o value por agoraaa
-            user: payer.pubkey(),
-            system_program: anchor_lang::solana_program::system_program::ID, //necessário para criar contas
-        }
-        .to_account_metas(None), //converter para o formato que a transação quer
-        data: instruction::Initialize {}.data(), //qual é a função que queremos executar
-    };
-
-    let mut tx = Transaction::new_with_payer(&[i], Some(&payer.pubkey())); //cria uma transação
-    tx.sign(&[&payer, &voting_state_account], recent_blockhash); //a transição tem de ser paga pelo pauer e pela conta que esta a ser criada
-                                                                 //Associa o blockhash mais recente
-
-    match banks_client.process_transaction(tx).await {
-        Ok(_) => {}
-        Err(e) => {
-            println!("{e}");
-            return;
-        }
-    } //envia para a blockchain local
-
-    println!("Initialize doneee");
-    println!("Owner antigo: {}", payer.pubkey());
-
-    //set value
-    let recent_blockhash = match banks_client.get_latest_blockhash().await {
-        Ok(h) => h,
-        Err(e) => {
-            println!("{e}");
-            return;
-        }
-    };
-
-    let i = Instruction {
-        program_id,
-        accounts: accounts::OnlyOwner {
-            //quer a assinatura do owner
-            voting_state: voting_state_account.pubkey(),
-            owner: payer.pubkey(),
+            voting_state: voting_state_account.pubkey(), // conta onde ficam os dados da votação
+            user: payer.pubkey(),                        // quem cria a votação fica chairperson
+            system_program: anchor_lang::solana_program::system_program::ID,
         }
         .to_account_metas(None),
-        data: instruction::SetValue { value: 5 }.data(), //em vez de initialize muda o value
+        data: instruction::Initialize { proposals_names }.data(),
     };
 
-    let mut tx = Transaction::new_with_payer(&[i], Some(&payer.pubkey()));
-    tx.sign(&[&payer], recent_blockhash);
-    match banks_client.process_transaction(tx).await {
-        Ok(_) => {}
-        Err(e) => {
-            println!("{e}");
-            return;
-        }
-    };
+    // Cria a transação com a instrução initialize
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
 
-    println!("Value mudado para 10");
+    // Assina com o payer e com a conta voting_state_account,
+    // porque esta conta está a ser criada agora
+    tx.sign(&[&payer, &voting_state_account], recent_blockhash);
 
-    // 3. change_owner
+    // Envia a transação para a blockchain local
+    banks_client.process_transaction(tx).await.unwrap();
 
-    let new_owner = Keypair::new(); //blablah.pubkey()    solana-keygen new    ~/.config/solana/id.json
+    println!("Initialize feito");
+    println!("Chairperson: {}", payer.pubkey());
 
-    /*use solana_sdk::signature::read_keypair_file;
+    // Criar voters
 
-    let other_user = read_keypair_file("~/.config/solana/id.json")
-        .expect("failed to read keypair"); */
+    // Cria dois utilizadores/voters
+    let voter1 = Keypair::new();
+    let voter2 = Keypair::new();
 
-    let recent_blockhash = match banks_client.get_latest_blockhash().await {
-        Ok(h) => h,
-        Err(e) => {
-            println!("{e}");
-            return;
-        }
-    };
+    // Dar direito de voto ao voter1
 
-    let i = Instruction {
-        //Instrução para chamar change owner
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+
+    let ix = Instruction {
         program_id,
-        accounts: accounts::OnlyOwner {
-            voting_state: voting_state_account.pubkey(), //conta com os dados
-            owner: payer.pubkey(),                       //owner que esta autorizado
+        accounts: accounts::OnlyChairperson {
+            voting_state: voting_state_account.pubkey(),
+            chairperson: payer.pubkey(), // só o chairperson pode dar direito de voto
         }
-        .to_account_metas(None), //converte para o formato esperado
-        data: instruction::ChangeOwner {
-            new_owner: new_owner.pubkey(),
+        .to_account_metas(None),
+        data: instruction::GiveRightToVote {
+            voter: voter1.pubkey(),
         }
         .data(),
     };
 
-    let mut tx = Transaction::new_with_payer(&[i], Some(&payer.pubkey()));
-    tx.sign(&[&payer], recent_blockhash); //cria a transação com o owner atual
-    match banks_client.process_transaction(tx).await {
-        Ok(_) => {}
-        Err(e) => {
-            println!("{e}");
-            return;
-        }
-    }; //envia a transação para a blockchain atual
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
 
-    println!("Owner alterado");
+    // Só o chairperson precisa de assinar esta transação
+    tx.sign(&[&payer], recent_blockhash);
 
-    // 4. non-owner tenta mudar value
+    banks_client.process_transaction(tx).await.unwrap();
 
-    let fake_owner = Keypair::new();
-    /*let fake_owner = read_keypair_file("~/.config/solana/id.json")
-    .expect("failed to read keypair"); */
-    let recent_blockhash = match banks_client.get_latest_blockhash().await {
-        Ok(h) => h,
-        Err(e) => {
-            println!("{e}");
-            return;
-        }
-    };
+    println!("Voter1 autorizado");
 
-    let i = Instruction {
+    // Dar direito de voto ao voter2
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+
+    let ix = Instruction {
         program_id,
-        accounts: accounts::OnlyOwner {
+        accounts: accounts::OnlyChairperson {
             voting_state: voting_state_account.pubkey(),
-            owner: fake_owner.pubkey(),
+            chairperson: payer.pubkey(),
         }
         .to_account_metas(None),
-        data: instruction::SetValue { value: 99 }.data(),
+        data: instruction::GiveRightToVote {
+            voter: voter2.pubkey(),
+        }
+        .data(),
     };
 
-    let mut tx = Transaction::new_with_payer(&[i], Some(&payer.pubkey()));
-    tx.sign(&[&payer, &fake_owner], recent_blockhash);
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
+    tx.sign(&[&payer], recent_blockhash);
+
+    banks_client.process_transaction(tx).await.unwrap();
+
+    println!("Voter2 autorizado");
+
+    // 5. Chairperson vota em wine
+    // 0 -> wine
+    // 1 -> beer
+    // 2 -> water
+
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+
+    let ix = Instruction {
+        program_id,
+        accounts: accounts::Vote {
+            voting_state: voting_state_account.pubkey(),
+            voter: payer.pubkey(), // chairperson é também voter
+        }
+        .to_account_metas(None),
+        data: instruction::Vote { proposal_index: 0 }.data(),
+    };
+
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
+
+    // O chairperson assina porque é ele que está a votar
+    tx.sign(&[&payer], recent_blockhash);
+
+    banks_client.process_transaction(tx).await.unwrap();
+
+    println!("Chairperson votou em wine");
+
+    // Voter1 vota em beer
+
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+
+    let ix = Instruction {
+        program_id,
+        accounts: accounts::Vote {
+            voting_state: voting_state_account.pubkey(),
+            voter: voter1.pubkey(),
+        }
+        .to_account_metas(None),
+        data: instruction::Vote { proposal_index: 1 }.data(),
+    };
+
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
+
+    // O payer paga a transação, mas o voter1 também tem de assinar
+    // porque é ele que está a votar
+    tx.sign(&[&payer, &voter1], recent_blockhash);
+
+    banks_client.process_transaction(tx).await.unwrap();
+
+    println!("Voter1 votou em beer");
+
+    // Voter2 vota em beer
+
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+
+    let ix = Instruction {
+        program_id,
+        accounts: accounts::Vote {
+            voting_state: voting_state_account.pubkey(),
+            voter: voter2.pubkey(),
+        }
+        .to_account_metas(None),
+        data: instruction::Vote { proposal_index: 1 }.data(),
+    };
+
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
+
+    // O voter2 tem de assinar porque é ele que está a votar
+    tx.sign(&[&payer, &voter2], recent_blockhash);
+
+    banks_client.process_transaction(tx).await.unwrap();
+
+    println!("Voter2 votou em beer");
+
+    //  Testar double voting
+    // o voter1 tenta votar outra vez.
+    // já tem voted = true.
+
+    let recent_blockhash = banks_client.get_latest_blockhash().await.unwrap();
+
+    let ix = Instruction {
+        program_id,
+        accounts: accounts::Vote {
+            voting_state: voting_state_account.pubkey(),
+            voter: voter1.pubkey(),
+        }
+        .to_account_metas(None),
+        data: instruction::Vote { proposal_index: 2 }.data(),
+    };
+
+    let mut tx = Transaction::new_with_payer(&[ix], Some(&payer.pubkey()));
+    tx.sign(&[&payer, &voter1], recent_blockhash);
 
     let result = banks_client.process_transaction(tx).await;
 
     match result {
-        Ok(_) => println!("isto não é suposto acontecerrrr"),
-        Err(_) => println!("non owner não altera o valor"),
+        Ok(_) => println!("Erro: o voter1 conseguiu votar duas vezes"),
+        Err(_) => println!("Double voting bloqueado corretamente"),
     }
 
-    // 5. ler dados (get)
+    //9. Ler o estado final da votação
 
-    let account = match banks_client
-        .get_account(voting_state_account.pubkey()) //vai a blockchain e procura voting_state
+    let account = banks_client
+        .get_account(voting_state_account.pubkey())
         .await
-    {
-        Ok(Some(a)) => a, //get account devolve um option
-        _ => {
-            println!("a conta não existe");
-            return;
-        }
-    };
-    /*  .unwrap() //espera resultado async
-    .unwrap(); //garante que a conta existe */
+        .unwrap()
+        .unwrap();
 
-    let mut data_slice: &[u8] = &account.data; //Os dados vÊm como u[8],
-    let voting_state = match VotingState::try_deserialize(&mut data_slice) {
-        Ok(v) => v,
-        Err(e) => {
-            println!("{e}");
-            return;
-        }
-    }; //Converter para struct , bytes ficam VotingState {owner,value}
+    // A conta vem em bytes, por isso temos de desserializar
+    let mut data_slice: &[u8] = &account.data;
+    let voting_state = VotingState::try_deserialize(&mut data_slice).unwrap();
 
-    println!("Owner atual: {}", voting_state.owner);
-    println!("Value atual: {}", voting_state.value);
+    println!("\nEstado final da votação:");
+    println!("Chairperson atual: {}", voting_state.chairperson);
+    println!(
+        "Voto do chairperson: {:?}",
+        voting_state.chairperson_vote_index
+    );
+
+    // Mostrar os resultados das propostas
+    println!("\nResultados:");
+    for (i, proposal) in voting_state.proposals.iter().enumerate() {
+        println!("{} -> {} votos: {}", i, proposal.name, proposal.vote_count);
+    }
+
+    // Mostrar todos os voters registados
+    println!("\nVoters:");
+    for voter in voting_state.voters.iter() {
+        println!(
+            "address: {}, allowed: {}, voted: {}, vote_index: {:?}, vote_vector: {:?}",
+            voter.address, voter.allowed_to_vote, voter.voted, voter.vote_index, voter.vote_vector
+        );
+    }
 }
