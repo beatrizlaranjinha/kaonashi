@@ -7,8 +7,9 @@ use solana_sdk::{
     transaction::Transaction, // representa uma transação enviada para a blockchain
 };
 
-// importa as contas, instruções e structs do contrato
-use kaonashi::{accounts, instruction, Ballot, VoterRecord};
+// importa as contas e instruções do contrato
+use kaonashi::owner_project::{Ballot, VoterRecord};
+use kaonashi::{accounts, instruction};
 
 #[tokio::main] // permite usar async/await no main
 async fn main() {
@@ -280,7 +281,7 @@ async fn main() {
 
     println!("Chairperson resolveu o empate: beer ganhou");
 
-    // ----------------------------------estado final do ballot
+    // estado final do ballot
 
     let account = banks_client
         .get_account(ballot_account.pubkey())

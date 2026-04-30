@@ -1,0 +1,17 @@
+Numa fase inicial, aprofundei os conceitos fundamentais necessários ao projeto, nomeadamente blockchain, sistemas distribuídos e mecanismos de consenso, com especial atenção à arquitetura da Solana, incluindo Proof of History, Proof of Stake e Byzantine Fault Tolerance.
+
+Paralelamente, estudei técnicas de zero-knowledge proofs, incluindo exemplos clássicos como o problema de Graph Isomorphism.
+
+Ao nível da implementação, desenvolvi um smart contract em Rust utilizando o framework Anchor, onde implementei uma estrutura de estado com controlo de acesso (owner), permitindo executar e validar transações na blockchain. Estes testes foram realizados localmente utilizando o ambiente solana-program-test, recorrendo a operações assíncronas com Tokio para simular a interação com a rede.
+
+Além disso, aprofundei o estudo de esquemas criptográficos de chave pública, como o ElGamal, incluindo a sua construção, funcionamento e prova de segurança baseada na assunção Decisional Diffie-Hellman (DDH).
+
+As principais componentes já desenvolvidas incluem:
+* Estudo teórico de blockchain, zero-knowledge e zkRollups.
+* Implementação de smart contracts em Solana com Rust e Anchor.
+* Execução e validação de transações em ambiente local.
+* Estudo de esquemas criptográficos como ElGamal.
+
+Neste momento, estou a focar-me na próxima fase do projeto:
+* Implementação de um sistema de votação (ballot) na blockchain, incluindo os conceitos de chairperson, registo de votantes e mecanismo de votação.
+* Implementação própria do esquema ElGamal, com o objetivo de compreender e adaptar o seu funcionamento ao contexto do sistema desenvolvido.

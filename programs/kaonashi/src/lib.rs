@@ -89,16 +89,14 @@ pub mod owner_project {
         require!(ballot.tally[index] < u64::MAX, VotingError::VoteOverflow);
 
         // Atualiza a conta individual do voter.
-        voter_record.has_voted = true; // já votou
-        voter_record.vote = proposal_index; // guarda o índice da proposta escolhida
+        voter_record.cast(proposal_index);
 
         // Atualiza a contagem global da proposta escolhida.
         // Exemplo: se index = 1, então tally[1] aumenta em 1.
-        ballot.tally[index] += 1;
+        ballot.add_vote(index);
 
         Ok(())
     }
-
     // 4. Em caso de empate, só o chairperson pode escolher o vencedor final.
     // O chairperson não vota normalmente só desempata
     pub fn resolve_tie(ctx: Context<ResolveTie>, winning_index: u8) -> Result<()> {
@@ -110,22 +108,11 @@ pub mod owner_project {
             VotingError::InvalidProposal
         );
 
-        // tally = [2, 2, 0, 0, 0]
-        // active_tallies = [2, 2, 0]
-        let active_tallies = &ballot.tally[..ballot.proposal_count as usize];
-
         // Procura o maior número de votos dentro de active_tallies.
-
-        let max_votes = match active_tallies.iter().copied().max() {
-            Some(value) => value, //encontrou o maior número de votos
-            None => return Err(VotingError::NoProposals.into()), //não havia propostas para analisar
-        };
+        let max_votes = ballot.max_votes()?;
 
         // Conta quantas propostas têm o número máximo de votos para verificar empate
-        let tied_count = active_tallies
-            .iter()
-            .filter(|votes| **votes == max_votes)
-            .count();
+        let tied_count = ballot.tied_count(max_votes);
 
         // Verifica se há mesmo empate.
         require!(tied_count > 1, VotingError::NoTieToResolve);
@@ -139,7 +126,7 @@ pub mod owner_project {
 
         // Guarda o índice da proposta escolhida como vencedora final.
         // Isto não altera a contagem dos votos, apenas resolve o empate.
-        ballot.final_winner_index = winning_index;
+        ballot.set_final_winner(winning_index);
 
         // Mensagem para os logs da transação.
         msg!(
@@ -149,141 +136,175 @@ pub mod owner_project {
 
         Ok(())
     }
-}
+    // Accounts
 
-// Accounts
-
-#[account]
-pub struct Ballot {
-    pub chairperson: Pubkey,         // chairperson
-    pub proposals: Vec<String>,      // ["wine", "beer", "water"]
-    pub tally: [u64; MAX_PROPOSALS], // tally = [0, 0, 0, 0, 0]; a posição do tally corresponde ao índice da proposta
-    pub proposal_count: u8,          // número real de propostas
-    pub final_winner_index: u8, // vencedor final em caso de empate; NO_FINAL_WINNER se ainda não existir
-}
-
-impl Ballot {
-    pub fn init(&mut self, chairperson: Pubkey, proposals_names: Vec<String>) {
-        self.chairperson = chairperson; // endereço de quem criou a votação
-        self.proposal_count = proposals_names.len() as u8; // quantas propostas existem
-        self.proposals = proposals_names; // guarda os nomes das propostas on-chain
-        self.tally = [0; MAX_PROPOSALS]; // [0, 0, 0, 0, 0]; ninguém votou
-        self.final_winner_index = NO_FINAL_WINNER; // ainda não há vencedor final
+    #[account]
+    pub struct Ballot {
+        pub chairperson: Pubkey,         // chairperson
+        pub proposals: Vec<String>,      // ["wine", "beer", "water"]
+        pub tally: [u64; MAX_PROPOSALS], // tally = [0, 0, 0, 0, 0]; a posição do tally corresponde ao índice da proposta
+        pub proposal_count: u8,          // número real de propostas
+        pub final_winner_index: u8, // vencedor final em caso de empate; NO_FINAL_WINNER se ainda não existir
     }
 
-    pub const SPACE: usize = 8 // discriminator Anchor
+    impl Ballot {
+        // funcionalidades que pertencem ao Ballot
+        pub fn init(&mut self, chairperson: Pubkey, proposals_names: Vec<String>) {
+            self.chairperson = chairperson; // endereço de quem criou a votação
+            self.proposal_count = proposals_names.len() as u8; // quantas propostas existem
+            self.proposals = proposals_names; // guarda os nomes das propostas on-chain
+            self.tally = [0; MAX_PROPOSALS]; // [0, 0, 0, 0, 0]; ninguém votou
+            self.final_winner_index = NO_FINAL_WINNER; // ainda não há vencedor final
+        }
+
+        pub fn add_vote(&mut self, index: usize) {
+            self.tally[index] += 1; // incrementa a contagem da proposta escolhida
+        }
+
+        pub fn active_tallies(&self) -> &[u64] {
+            // tally = [2, 2, 0, 0, 0]
+            // active_tallies = [2, 2, 0]
+            &self.tally[..self.proposal_count as usize]
+        }
+
+        pub fn max_votes(&self) -> Result<u64> {
+            self.active_tallies()
+                .iter()
+                .copied()
+                .max()
+                .ok_or(VotingError::NoProposals.into())
+        }
+
+        pub fn tied_count(&self, max_votes: u64) -> usize {
+            self.active_tallies()
+                .iter()
+                .filter(|votes| **votes == max_votes)
+                .count()
+        }
+
+        pub fn set_final_winner(&mut self, winning_index: u8) {
+            self.final_winner_index = winning_index; // guarda o vencedor final
+        }
+
+        pub const SPACE: usize = 8 // discriminator Anchor
         + 32 // chairperson Pubkey
         + 4 + MAX_PROPOSALS * (4 + MAX_PROPOSAL_NAME) // Vec<String>: len + cada String
         + 8 * MAX_PROPOSALS // tally [u64; 5]
         + 1 // proposal_count
         + 1; // final_winner_index
-}
+    }
 
-#[account]
-pub struct VoterRecord {
-    pub can_vote: bool,  // indica se o voter foi autorizado pelo chairperson
-    pub has_voted: bool, // indica se o voter já votou
-    pub vote: u8,        // depois do voto, guarda o índice da proposta escolhida
-}
+    #[account]
+    pub struct VoterRecord {
+        pub can_vote: bool,  // indica se o voter foi autorizado pelo chairperson
+        pub has_voted: bool, // indica se o voter já votou
+        pub vote: u8,        // depois do voto, guarda o índice da proposta escolhida
+    }
 
-impl VoterRecord {
-    pub const SPACE: usize = 8 // discriminator Anchor
+    impl VoterRecord {
+        pub fn cast(&mut self, proposal_index: u8) {
+            self.has_voted = true; // já votou
+            self.vote = proposal_index; // guarda o índice da proposta escolhida
+        }
+
+        pub const SPACE: usize = 8 // discriminator Anchor
         + 1 // can_vote
         + 1 // has_voted
         + 1; // vote
-}
+    }
 
-// Contexts
+    // Contexts
 
-#[derive(Accounts)]
-pub struct Initialize<'info> {
-    #[account(init, payer = chairperson, space = Ballot::SPACE)]
-    pub ballot: Account<'info, Ballot>,
+    #[derive(Accounts)]
+    pub struct Initialize<'info> {
+        #[account(init, payer = chairperson, space = Ballot::SPACE)]
+        pub ballot: Account<'info, Ballot>,
 
-    #[account(mut)]
-    pub chairperson: Signer<'info>,
+        #[account(mut)]
+        pub chairperson: Signer<'info>,
 
-    pub system_program: Program<'info, System>,
-}
+        pub system_program: Program<'info, System>,
+    }
 
-#[derive(Accounts)]
-#[instruction(voter_address: Pubkey)]
-pub struct RegisterVoter<'info> {
-    #[account(mut)]
-    pub chairperson: Signer<'info>,
+    #[derive(Accounts)]
+    #[instruction(voter_address: Pubkey)]
+    pub struct RegisterVoter<'info> {
+        #[account(mut)]
+        pub chairperson: Signer<'info>,
 
-    // Só o chairperson guardado dentro da Ballot pode registar voters.
-    #[account(mut, has_one = chairperson)]
-    pub ballot: Account<'info, Ballot>,
+        // Só o chairperson guardado dentro da Ballot pode registar voters.
+        #[account(mut, has_one = chairperson)]
+        pub ballot: Account<'info, Ballot>,
 
-    // Conta PDA única para este voter nesta votação.
-    // Isto faz com que o mesmo voter tenha uma conta diferente em cada eleição.
-    #[account(
+        // Conta PDA única para este voter nesta votação.
+        // Isto faz com que o mesmo voter tenha uma conta diferente em cada eleição.
+        #[account(
         init,
         payer = chairperson,
         space = VoterRecord::SPACE,
         seeds = [b"voter", ballot.key().as_ref(), voter_address.as_ref()],
         bump
     )]
-    pub voter_record: Account<'info, VoterRecord>,
+        pub voter_record: Account<'info, VoterRecord>,
 
-    pub system_program: Program<'info, System>,
-}
+        pub system_program: Program<'info, System>,
+    }
 
-#[derive(Accounts)]
-pub struct CastVote<'info> {
-    #[account(mut)]
-    pub voter: Signer<'info>,
+    #[derive(Accounts)]
+    pub struct CastVote<'info> {
+        #[account(mut)]
+        pub voter: Signer<'info>,
 
-    #[account(mut)]
-    pub ballot: Account<'info, Ballot>,
+        #[account(mut)]
+        pub ballot: Account<'info, Ballot>,
 
-    // No voto, a PDA é derivada com o endereço de quem está a assinar.
-    // Assim, o voter só consegue usar o seu próprio VoterRecord.
-    #[account(
+        // No voto, a PDA é derivada com o endereço de quem está a assinar.
+        // Assim, o voter só consegue usar o seu próprio VoterRecord.
+        #[account(
         mut,
         seeds = [b"voter", ballot.key().as_ref(), voter.key().as_ref()],
         bump
     )]
-    pub voter_record: Account<'info, VoterRecord>,
-}
+        pub voter_record: Account<'info, VoterRecord>,
+    }
 
-#[derive(Accounts)]
-pub struct ResolveTie<'info> {
-    pub chairperson: Signer<'info>,
+    #[derive(Accounts)]
+    pub struct ResolveTie<'info> {
+        pub chairperson: Signer<'info>,
 
-    // Só o chairperson guardado na Ballot pode resolver o empate.
-    #[account(mut, has_one = chairperson)]
-    pub ballot: Account<'info, Ballot>,
-}
+        // Só o chairperson guardado na Ballot pode resolver o empate.
+        #[account(mut, has_one = chairperson)]
+        pub ballot: Account<'info, Ballot>,
+    }
 
-// Errors
-#[error_code]
-pub enum VotingError {
-    #[msg("No proposals provided.")]
-    NoProposals,
+    // Errors
+    #[error_code]
+    pub enum VotingError {
+        #[msg("No proposals provided.")]
+        NoProposals,
 
-    #[msg("Maximum 5 proposals allowed.")]
-    TooManyProposals,
+        #[msg("Maximum 5 proposals allowed.")]
+        TooManyProposals,
 
-    #[msg("Proposal name is too long.")]
-    ProposalNameTooLong,
+        #[msg("Proposal name is too long.")]
+        ProposalNameTooLong,
 
-    #[msg("Voter is not authorized to vote.")]
-    NotAllowedToVote,
+        #[msg("Voter is not authorized to vote.")]
+        NotAllowedToVote,
 
-    #[msg("Voter has already cast a vote.")]
-    AlreadyVoted,
+        #[msg("Voter has already cast a vote.")]
+        AlreadyVoted,
 
-    #[msg("Selected proposal index is out of bounds.")]
-    InvalidProposal,
+        #[msg("Selected proposal index is out of bounds.")]
+        InvalidProposal,
 
-    #[msg("Vote counter overflow.")]
-    VoteOverflow,
+        #[msg("Vote counter overflow.")]
+        VoteOverflow,
 
-    #[msg("There is no tie to resolve.")]
-    NoTieToResolve,
+        #[msg("There is no tie to resolve.")]
+        NoTieToResolve,
 
-    #[msg("The chosen winner must be one of the tied proposals.")]
-    WinnerMustBeTied,
+        #[msg("The chosen winner must be one of the tied proposals.")]
+        WinnerMustBeTied,
+    }
 }
