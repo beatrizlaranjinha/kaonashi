@@ -1,3 +1,23 @@
+//structs
+
+#[derive(clone, copy, debug)]
+pub struct PublicKey {
+    pub p: u64, //primo
+    pub q: u64, //group order
+    pub g: u64, //generator
+    pub h: u64, //h = g^x mod p
+}
+
+#[derive(clone, copy, debug)]
+pub struct secretKey {
+    pub x: u64, //private key
+}
+
+#[derive(clone, copy, debug)]
+pub struct ciphertext {
+    pub c1: u64, // c1 = g^y mod p
+    pub c2: u64, // c2 = h^y * m mod p
+}
 //funções que vão ser utilizadas
 
 // x -> base , n -> expoente , p-> modulus
