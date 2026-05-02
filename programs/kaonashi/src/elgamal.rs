@@ -67,3 +67,20 @@ pub fn keygen(p: u64, q: u64, g: u64, x: u64) -> (PublicKey, SecretKey) {
 
     (pk, sk)
 }
+
+// Encryption
+pub fn encrypt(pk: &PublicKey, m: u64, y: u64) -> Ciphertext {
+    let c1 = mod_pow(pk.g, y, pk.p); // g^y mod p
+    let s = mod_pow(pk.h, y, pk.p); // h^y mod p (máscara)
+    let c2 = (s * m) % pk.p; // h^y * m mod p
+    Ciphertext { c1, c2 }
+}
+
+// Decryption
+pub fn decrypt(pk: &PublicKey, sk: &SecretKey, ct: &Ciphertext) -> Result<u64, ElGamalError> {
+    let s = mod_pow(ct.c1, sk.x, pk.p); // c1^x mod p
+    let inv = mod_inverse(s, pk.p)?; // inverso de s
+    let m = (ct.c2 * inv) % pk.p; // recuperar m
+
+    Ok(m)
+}
