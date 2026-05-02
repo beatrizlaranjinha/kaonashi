@@ -57,3 +57,13 @@ pub fn mod_inverse(a: u64, p: u64) -> Result<u64, ElGamalError> {
 }
 
 // Elgamal: keygen , encryption and decryption
+
+// Key Generation
+pub fn keygen(p: u64, q: u64, g: u64, x: u64) -> (PublicKey, SecretKey) {
+    let h = mod_pow(g, x, p); // h = g^x mod p //calculado a partir do segredo
+
+    let pk = PublicKey { p, q, g, h };
+    let sk = SecretKey { x };
+
+    (pk, sk)
+}
