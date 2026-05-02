@@ -1,6 +1,6 @@
 //structs
 
-#[derive(clone, copy, debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PublicKey {
     pub p: u64, //primo
     pub q: u64, //group order
@@ -8,19 +8,27 @@ pub struct PublicKey {
     pub h: u64, //h = g^x mod p
 }
 
-#[derive(clone, copy, debug)]
-pub struct secretKey {
+#[derive(Clone, Copy, Debug)]
+pub struct SecretKey {
     pub x: u64, //private key
 }
 
-#[derive(clone, copy, debug)]
-pub struct ciphertext {
+#[derive(Clone, Copy, Debug)]
+pub struct Ciphertext {
     pub c1: u64, // c1 = g^y mod p
     pub c2: u64, // c2 = h^y * m mod p
 }
+
+#[derive(Debug)]
+pub enum ElGamalError {
+    InvalidInverse,
+    LogNotFound,
+}
+
 //funções que vão ser utilizadas
 
 // x -> base , n -> expoente , p-> modulus
+// exponente modular
 pub fn mod_pow(mut x: u64, mut n: u64, p: u64) -> u64 {
     let mut res = 1;
 
@@ -40,10 +48,12 @@ pub fn mod_pow(mut x: u64, mut n: u64, p: u64) -> u64 {
 }
 
 //Inverso multiplicativo
-pub fn mod_inverse(a: u64, p: u64) -> Result<u64, &'static str> {
+pub fn mod_inverse(a: u64, p: u64) -> Result<u64, ElGamalError> {
     if a == 0 {
-        return Err("non existent");
+        return Err(ElGamalError::InvalidInverse);
     }
 
     Ok(mod_pow(a, p - 2, p))
 }
+
+// Elgamal: keygen , encryption and decryption
