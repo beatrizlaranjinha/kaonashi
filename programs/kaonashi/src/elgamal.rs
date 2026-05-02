@@ -84,3 +84,41 @@ pub fn decrypt(pk: &PublicKey, sk: &SecretKey, ct: &Ciphertext) -> Result<u64, E
 
     Ok(m)
 }
+
+//agora vamos lidar com os nossos votos
+
+// converter voto 0/1 para elemento do grupo
+pub fn encode_vote(pk: &PublicKey, vote: u64) -> u64 {
+    mod_pow(pk.g, vote, pk.p) // vote 0 -> 1, vote 1 -> g
+}
+
+// cifrar diretamente um voto 0/1
+pub fn encrypt_vote(pk: &PublicKey, vote: u64, y: u64) -> Ciphertext {
+    let m = encode_vote(pk, vote);
+    encrypt(pk, m, y)
+}
+
+// somar votos cifrados
+pub fn add_ciphertexts(pk: &PublicKey, a: &Ciphertext, b: &Ciphertext) -> Ciphertext {
+    Ciphertext {
+        c1: (a.c1 * b.c1) % pk.p,
+        c2: (a.c2 * b.c2) % pk.p,
+    }
+}
+
+// criar tally inicial E(0)
+pub fn encrypted_zero(pk: &PublicKey, y: u64) -> Ciphertext {
+    encrypt_vote(pk, 0, y) //para adicionar o primeiro tally
+}
+
+// cifrar vetor de voto
+pub fn encrypt_vote_vector(
+    pk: &PublicKey,
+    vote_index: usize,
+    proposal_count: usize,
+    y_values: &[u64], // y aleatorio para cada posição
+) -> Vec<Ciphertext> {
+    (0..proposal_count) //iterador
+        .map(|i| encrypt_vote(pk, (i == vote_index) as u64, y_values[i])) //aplica encrypt_vote a cada i, onde o voto é 1 se i == vote_index, caso contrário 0
+        .collect() //Junta tudo num
+}
