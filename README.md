@@ -1,9 +1,8 @@
 
 Kaonashi Final Project
 
-Run the project locally:
-Open separate terminals and run the following commands.
 
+How to run :
 
 1. Start Solana local validator
 
