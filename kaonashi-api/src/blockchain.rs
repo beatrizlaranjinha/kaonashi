@@ -4,9 +4,10 @@ use solana_sdk::signature::{Keypair, Signer};
 use std::str::FromStr;
 
 use crate::{ballots::ballot_for_decade, movies::movies_decades};
+use solana_zk_sdk::encryption::elgamal::ElGamalPubkey;
 
 use zk_client::{
-    crypto::{encrypt_values, generate_elgamal_keypair},
+    crypto::encrypt_values,
     solana_client::{connect_localnet, fetch_ballot, initialize_ballot, submit_rollup_batch},
 };
 
@@ -82,38 +83,37 @@ pub fn submit_rollup_batch_to_blockchain(
 // Depois de correr isto, é preciso copiar os endereços gerados
 // para o ficheiro ballots.rs, para que a API saiba que ballot
 // corresponde a cada década.
-pub fn create_all_ballots_on_chain() -> Result<Vec<String>, String> {
-    // Liga à Solana localnet.
+
+pub fn create_all_ballots_on_chain(
+    elgamal_public_keys_by_decade: Vec<[u8; 32]>,
+) -> Result<Vec<String>, String> {
     let program = connect_localnet()
         .map_err(|error| format!("Failed to connect to Solana localnet: {}", error))?;
 
-    // Guarda as mensagens com os ballots criados.
     let mut created_ballots = Vec::new();
 
-    // Cria uma eleição/ballot para cada década.
     for decade_id in 0..=5 {
-        // Vai buscar os filmes da década.
         let movies =
             movies_decades(decade_id).ok_or_else(|| format!("Invalid decade {}", decade_id))?;
 
-        // Cria uma nova conta Solana para o ballot.
+        let public_key = elgamal_public_keys_by_decade
+            .get(decade_id as usize)
+            .ok_or_else(|| format!("Missing ElGamal public key for decade {}", decade_id))?;
+
+        let elgamal_public_key = ElGamalPubkey::try_from(public_key.as_slice())
+            .map_err(|_| format!("Invalid ElGamal public key for decade {}", decade_id))?;
+
         let ballot = Keypair::new();
 
-        // Cria uma nova chave ElGamal para cifrar os votos desta década.
-        let elgamal = generate_elgamal_keypair();
-
-        // O tally inicial começa com zero votos para todos os filmes.
         let initial_values = vec![0_u64; movies.len()];
 
-        // Cifra o tally inicial.
-        let initial_encrypted_tally = encrypt_values(&initial_values, elgamal.pubkey());
+        let initial_encrypted_tally = encrypt_values(&initial_values, &elgamal_public_key);
 
-        // Inicializa o ballot on-chain.
         initialize_ballot(
             &program,
             &ballot,
             movies,
-            elgamal.pubkey().to_bytes(),
+            *public_key,
             initial_encrypted_tally,
         )
         .map_err(|error| {
@@ -123,7 +123,6 @@ pub fn create_all_ballots_on_chain() -> Result<Vec<String>, String> {
             )
         })?;
 
-        // Guarda e imprime o endereço criado.
         let line = format!("decade {} -> ballot {}", decade_id, ballot.pubkey());
 
         println!("{}", line);

@@ -7,7 +7,7 @@ pub mod rollups;
 use crypto::{encrypted_tally_after_vote, validate_ciphertexts, validate_public_key};
 use election::ELECTION_OPEN;
 
-declare_id!("tsoULYRt3BxrZQsjBjveFnG89iV2rXt76AKXKXkn9U6");
+declare_id!("4ybufDXMBSQpQ6kxGqEud9afLC9ayoN925Fk6SkAJxx7");
 
 pub const MAX_PROPOSALS: usize = 8;
 pub const MAX_PROPOSAL_NAME: usize = 64;

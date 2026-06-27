@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-projeto_kaonashi = "tsoULYRt3BxrZQsjBjveFnG89iV2rXt76AKXKXkn9U6"
+projeto_kaonashi = "4ybufDXMBSQpQ6kxGqEud9afLC9ayoN925Fk6SkAJxx7"
 
 [registry]
 url = "https://api.apr.dev"

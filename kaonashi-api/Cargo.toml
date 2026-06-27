@@ -25,7 +25,7 @@ anchor-client = "0.32.1"
 solana-sdk = "2.3.1"
 solana-zk-sdk = "6.0.1"
 
-zk-client = { path = "../Kaonashi2/Projeto/zk-client" }
+zk-client = { path = "../kaonashi-smart-contract/zk-client" }
 chrono = { version = "0.4.45", features = ["serde"] }
 jsonwebtoken = "10.4.0"
 rand = "0.8"

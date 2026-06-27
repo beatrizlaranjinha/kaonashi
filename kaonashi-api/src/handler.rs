@@ -475,8 +475,20 @@ pub async fn get_movies(Path(decade_id): Path<u8>) -> Json<Option<Vec<String>>> 
 }
 
 // Cria os ballots na blockchain.
-pub async fn create_ballots() -> String {
-    let result = tokio::task::spawn_blocking(move || create_all_ballots_on_chain()).await;
+pub async fn create_ballots(State(keeping_votes): State<Arc<KeepingVotes>>) -> String {
+    let elgamal_public_keys_by_decade = {
+        let keypairs = keeping_votes.elgamal_keypairs_by_decade.lock().unwrap();
+
+        keypairs
+            .iter()
+            .map(|keypair| keypair.pubkey().to_bytes())
+            .collect::<Vec<[u8; 32]>>()
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        create_all_ballots_on_chain(elgamal_public_keys_by_decade)
+    })
+    .await;
 
     match result {
         Ok(Ok(ballots)) => ballots.join("\n"),
