@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use crate::blockchain::finalize_election_from_blockchain;
 use crate::blockchain::get_ballot_state_from_blockchain;
 use crate::models::BlockchainBallotResponse;
+use crate::models::FinalResultsResponse;
 use axum::extract::{Path, State};
 use axum::Json;
 use sha2::{Digest, Sha256};
@@ -491,12 +493,28 @@ pub async fn create_ballots(State(keeping_votes): State<Arc<KeepingVotes>>) -> S
     .await;
 
     match result {
-        Ok(Ok(ballots)) => ballots.join("\n"),
+        Ok(Ok(created_ballots)) => {
+            let lines = created_ballots
+                .iter()
+                .map(|(decade_id, ballot)| format!("decade {} -> ballot {}", decade_id, ballot))
+                .collect::<Vec<String>>();
+
+            {
+                let mut ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+                for (decade_id, ballot) in created_ballots {
+                    ballots[decade_id as usize] = Some(ballot);
+                }
+            }
+
+            lines.join("\n")
+        }
+
         Ok(Err(error)) => format!("Blockchain error: {}", error),
+
         Err(error) => format!("Blockchain task failed: {}", error),
     }
 }
-
 // Cria uma mensagem de autenticação para a wallet assinar.
 pub async fn create_auth_challenge(
     State(keeping_votes): State<Arc<KeepingVotes>>,
@@ -543,9 +561,36 @@ pub async fn login_with_signature(
     }))
 }
 
-pub async fn get_blockchain_ballot(Path(decade_id): Path<u8>) -> Json<BlockchainBallotResponse> {
+pub async fn get_blockchain_ballot(
+    Path(decade_id): Path<u8>,
+    State(keeping_votes): State<Arc<KeepingVotes>>,
+) -> Json<BlockchainBallotResponse> {
+    let ballot = {
+        let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+        let Some(ballot) = ballots
+            .get(decade_id as usize)
+            .and_then(|ballot| ballot.as_ref())
+            .cloned()
+        else {
+            return Json(BlockchainBallotResponse {
+                success: false,
+                decade_id,
+                ballot: String::new(),
+                merkle_root: String::new(),
+                total_votes: 0,
+                batch_count: 0,
+                encrypted_tally: Vec::new(),
+                status: "No on-chain ballot found in API memory. Run /api/admin/create-ballots without restarting the API.".to_string(),
+            });
+        };
+
+        ballot
+    };
+
     let result =
-        tokio::task::spawn_blocking(move || get_ballot_state_from_blockchain(decade_id)).await;
+        tokio::task::spawn_blocking(move || get_ballot_state_from_blockchain(ballot, decade_id))
+            .await;
 
     match result {
         Ok(Ok(response)) => Json(response),
@@ -570,6 +615,84 @@ pub async fn get_blockchain_ballot(Path(decade_id): Path<u8>) -> Json<Blockchain
             batch_count: 0,
             encrypted_tally: Vec::new(),
             status: "Failed to run blockchain fetch task".to_string(),
+        }),
+    }
+}
+
+pub async fn finalize_election(
+    Path(decade_id): Path<u8>,
+    State(keeping_votes): State<Arc<KeepingVotes>>,
+) -> Json<FinalResultsResponse> {
+    let ballot = {
+        let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+        let Some(ballot) = ballots
+            .get(decade_id as usize)
+            .and_then(|ballot| ballot.as_ref())
+            .cloned()
+        else {
+            return Json(FinalResultsResponse {
+                success: false,
+                decade_id,
+                results: Vec::new(),
+                winner_index: 0,
+                winner_movie: String::new(),
+                total_votes: 0,
+                batch_count: 0,
+                status: "No on-chain ballot found in API memory. Run /api/admin/create-ballots without restarting the API.".to_string(),
+            });
+        };
+
+        ballot
+    };
+
+    let secret_key = {
+        let keypairs = keeping_votes.elgamal_keypairs_by_decade.lock().unwrap();
+
+        let Some(keypair) = keypairs.get(decade_id as usize) else {
+            return Json(FinalResultsResponse {
+                success: false,
+                decade_id,
+                results: Vec::new(),
+                winner_index: 0,
+                winner_movie: String::new(),
+                total_votes: 0,
+                batch_count: 0,
+                status: "No ElGamal keypair found for this decade".to_string(),
+            });
+        };
+
+        keypair.secret().clone()
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        finalize_election_from_blockchain(ballot, decade_id, secret_key)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(response)) => Json(response),
+
+        Ok(Err(error)) => Json(FinalResultsResponse {
+            success: false,
+            decade_id,
+            results: Vec::new(),
+            winner_index: 0,
+            winner_movie: String::new(),
+            total_votes: 0,
+            batch_count: 0,
+            status: error,
+        }),
+
+        Err(error) => Json(FinalResultsResponse {
+            success: false,
+            decade_id,
+            results: Vec::new(),
+            winner_index: 0,
+            winner_movie: String::new(),
+            total_votes: 0,
+            batch_count: 0,
+            status: format!("Finalize task failed: {}", error),
         }),
     }
 }

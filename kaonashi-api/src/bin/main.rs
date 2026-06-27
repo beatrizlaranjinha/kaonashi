@@ -46,6 +46,10 @@ async fn main() {
             "/api/blockchain/ballot/{decade_id}",
             get(handler::get_blockchain_ballot),
         )
+        .route(
+            "/api/admin/finalize-election/{decade_id}",
+            post(handler::finalize_election),
+        )
         .with_state(keeping_votes) // state in axum means shared data used by handlers
         .layer(cors);
 

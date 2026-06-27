@@ -93,6 +93,20 @@ pub fn create_batch_for_decade(
         stored_receipts.insert(receipt.vote_hash.clone(), receipt.clone());
     }
 
+    drop(stored_receipts);
+
+    let ballot_for_chain = {
+        let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+        ballots
+            .get(decade_id as usize)
+            .and_then(|ballot| ballot.as_ref())
+            .cloned()
+            .ok_or_else(|| {
+                "No on-chain ballot found in API memory. Run /api/admin/create-ballots before submitting batches.".to_string()
+            })?
+    };
+
     let decade_id_for_chain = decade_id;
     let merkle_root_for_chain = merkle_root.clone();
     let encrypted_tally_for_chain = encrypted_batch_tally.clone();
@@ -100,6 +114,7 @@ pub fn create_batch_for_decade(
 
     let on_chain_status = match std::thread::spawn(move || {
         submit_rollup_batch_to_blockchain(
+            ballot_for_chain,
             decade_id_for_chain,
             &merkle_root_for_chain,
             encrypted_tally_for_chain,

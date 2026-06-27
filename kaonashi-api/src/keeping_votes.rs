@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Mutex};
 
+use solana_sdk::pubkey::Pubkey;
 use solana_zk_sdk::encryption::elgamal::ElGamalKeypair;
 
 use crate::models::{EncryptedVoteBatch, PendingEncryptedVote, VoteReceipt};
@@ -23,6 +24,10 @@ pub struct KeepingVotes {
 
     // Guarda uma ElGamal keypair por década.
     pub elgamal_keypairs_by_decade: Mutex<Vec<ElGamalKeypair>>,
+
+    // Guarda o ballot on-chain criado para cada década.
+    // Isto evita depender do ficheiro ballots.rs durante testes locais.
+    pub ballots_by_decade: Mutex<Vec<Option<Pubkey>>>,
 }
 
 impl KeepingVotes {
@@ -33,20 +38,19 @@ impl KeepingVotes {
             .collect::<Vec<_>>();
 
         Self {
-            // votes_by_decade[decade_id][movie_index]
             votes_by_decade: Mutex::new(vec![vec![0; 8]; 6]),
 
             login_challenges: Mutex::new(HashMap::new()),
 
-            // pending_encrypted_votes[decade_id]
             pending_encrypted_votes: Mutex::new(vec![Vec::new(); 6]),
 
-            // encrypted_vote_batches[decade_id]
             encrypted_vote_batches: Mutex::new(vec![Vec::new(); 6]),
 
             vote_receipts_by_hash: Mutex::new(HashMap::new()),
 
             elgamal_keypairs_by_decade: Mutex::new(elgamal_keypairs_by_decade),
+
+            ballots_by_decade: Mutex::new(vec![None; 6]),
         }
     }
 }

@@ -182,3 +182,14 @@ pub struct BlockchainBallotResponse {
     pub encrypted_tally: Vec<Vec<u8>>,
     pub status: String,
 }
+#[derive(Debug, serde::Serialize)]
+pub struct FinalResultsResponse {
+    pub success: bool,
+    pub decade_id: u8,
+    pub results: Vec<u32>,
+    pub winner_index: usize,
+    pub winner_movie: String,
+    pub total_votes: u64,
+    pub batch_count: u64,
+    pub status: String,
+}
