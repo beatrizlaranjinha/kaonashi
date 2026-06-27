@@ -1,0 +1,32 @@
+# Rust / Anchor
+target/
+**/target/
+
+# Node / frontend
+node_modules/
+**/node_modules/
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Solana wallets / private keys
+id.json
+keypair.json
+wallet.json
+*-keypair.json
+*.key
+*.pem
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

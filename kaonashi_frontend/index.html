@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <meta
+            name="description"
+            content="Kaonashi is a private movie voting platform powered by zero-knowledge proofs and blockchain rollups."
+        />
+
+        <meta name="theme-color" content="#e8d9c9" />
+
+        <title>Kaonashi — Private Movie Voting</title>
+
+        <!-- Main stylesheet -->
+        <link data-trunk rel="css" href="style.css" />
+
+        <!-- Copy the public folder into the generated dist folder -->
+        <link data-trunk rel="copy-dir" href="public" />
+
+        <!-- Build and load the Leptos application -->
+        <link data-trunk rel="rust" data-wasm-opt="z" />
+    </head>
+
+    <body>
+        <noscript> JavaScript is required to use Kaonashi. </noscript>
+    </body>
+</html>

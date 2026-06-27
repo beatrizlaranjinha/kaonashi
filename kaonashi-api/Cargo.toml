@@ -1,0 +1,34 @@
+[package]
+name = "kaonashi-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+curve25519-dalek = { version = "4", features = ["rand_core"] }
+sha2 = "0.10"
+hex = "0.4"
+
+
+
+
+
+anchor-client = "0.32.1"
+solana-sdk = "2.3.1"
+solana-zk-sdk = "6.0.1"
+
+zk-client = { path = "../Kaonashi2/Projeto/zk-client" }
+chrono = { version = "0.4.45", features = ["serde"] }
+jsonwebtoken = "10.4.0"
+rand = "0.8"
+rand_core = "0.6"
+bs58 = "0.5.1"
+ed25519-dalek = "2.2.0"

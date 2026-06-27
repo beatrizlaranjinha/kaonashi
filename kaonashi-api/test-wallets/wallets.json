@@ -1,0 +1,62 @@
+[
+  {
+    "wallet_id": "voter_01",
+    "public_key": "5SKcY8PJPJyvAr9whvhbdGe1NsenHSHSwmFBBLmZHeRv",
+    "secret_key_32_file": "test-wallets/voter_01_secret32.json",
+    "keypair_64_file": "test-wallets/voter_01_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_02",
+    "public_key": "2oDHwHGubbV3aVXnmt1fWePUiTyz8Lm7rDuHYXBcBRuV",
+    "secret_key_32_file": "test-wallets/voter_02_secret32.json",
+    "keypair_64_file": "test-wallets/voter_02_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_03",
+    "public_key": "4jz7ADpMaTUGvjLHrafFTf6XxMtLXbHHZhdo3PZprLEs",
+    "secret_key_32_file": "test-wallets/voter_03_secret32.json",
+    "keypair_64_file": "test-wallets/voter_03_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_04",
+    "public_key": "5RfiKGbnjRCExJWvgbxkedY2cAwqK3sDYdovvw7csyGP",
+    "secret_key_32_file": "test-wallets/voter_04_secret32.json",
+    "keypair_64_file": "test-wallets/voter_04_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_05",
+    "public_key": "DVZyW6kuv9L8jWSw8BsTgDxZmTHaW8rQfBmtmWzc8d3H",
+    "secret_key_32_file": "test-wallets/voter_05_secret32.json",
+    "keypair_64_file": "test-wallets/voter_05_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_06",
+    "public_key": "252BFtC8PNzz2AFWLHfeNSofVhnugRcus3pjTp4xahkS",
+    "secret_key_32_file": "test-wallets/voter_06_secret32.json",
+    "keypair_64_file": "test-wallets/voter_06_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_07",
+    "public_key": "Dszu2zgFR53kr8feTqwcLhPrvBV4Nwi27oTZEnrFxTtz",
+    "secret_key_32_file": "test-wallets/voter_07_secret32.json",
+    "keypair_64_file": "test-wallets/voter_07_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_08",
+    "public_key": "8exk3Lteq5Y7Ham1o54bJEd76e3jMq1F2GjuhiQ7KegG",
+    "secret_key_32_file": "test-wallets/voter_08_secret32.json",
+    "keypair_64_file": "test-wallets/voter_08_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_09",
+    "public_key": "4X4EKvjdVEBYmgeL9U81DvQUNRhnxUz9f29qdhbV8zTJ",
+    "secret_key_32_file": "test-wallets/voter_09_secret32.json",
+    "keypair_64_file": "test-wallets/voter_09_keypair64.json"
+  },
+  {
+    "wallet_id": "voter_10",
+    "public_key": "DUWqfrZBD7Hp7MvoaRj5zen9vbRqjJxcnGxQsCWSmNae",
+    "secret_key_32_file": "test-wallets/voter_10_secret32.json",
+    "keypair_64_file": "test-wallets/voter_10_keypair64.json"
+  }
+]

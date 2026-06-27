@@ -1,0 +1,25 @@
+[package]
+name = "zk-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anchor-client = "0.32.1"
+anchor-lang = "0.32.1"
+solana-sdk = "2.3.1"
+solana-zk-sdk = "6.0.1"
+anyhow = "1.0"
+dirs = "6.0.0"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+
+projeto_kaonashi = { path = "../programs/projeto-kaonashi" }
+hex = "0.4.3"
+bs58 = "0.5.1"
+ed25519-dalek = "2.2.0"
+
+[[bin]]
+name = "generate-test-wallets"
+path = "src/generate_test_wallets.rs"
