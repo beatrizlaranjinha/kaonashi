@@ -1421,3 +1421,378 @@ input:focus-visible {
     background: var(--red);
     color: var(--cream);
 }
+
+.vote-receipt-card {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(10px);
+}
+
+.vote-receipt-label {
+    margin: 0 0 0.5rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    opacity: 0.7;
+}
+
+.vote-receipt-code {
+    margin: 0;
+    padding: 0.85rem;
+    border-radius: 12px;
+    font-family: monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    word-break: break-all;
+    background: rgba(0, 0, 0, 0.28);
+}
+
+.vote-receipt-hint {
+    margin: 0.75rem 0 0;
+    font-size: 0.85rem;
+    opacity: 0.72;
+}
+
+/* ---------------------------------------------------
+   Results Page
+--------------------------------------------------- */
+
+.results-page {
+    min-height: 100vh;
+    padding: 7rem 1.5rem 4rem;
+}
+
+.results-container {
+    width: min(1120px, 100%);
+    margin: 0 auto;
+}
+
+.results-container .movies-header {
+    margin-bottom: 2rem;
+}
+
+.results-section {
+    margin-top: 1.5rem;
+    padding: 1.4rem;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(255, 255, 255, 0.08),
+            transparent 36%
+        ),
+        rgba(255, 255, 255, 0.045);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(16px);
+}
+
+.results-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.1rem;
+}
+
+.results-section-header h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+}
+
+.results-muted {
+    margin: 0 0 1rem;
+    max-width: 680px;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.68);
+}
+
+/* ---------------------------------------------------
+   Result Cards
+--------------------------------------------------- */
+
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.result-card {
+    position: relative;
+    overflow: hidden;
+    min-height: 150px;
+    padding: 1.15rem;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.08),
+            rgba(255, 255, 255, 0.025)
+        ),
+        rgba(0, 0, 0, 0.25);
+    transition:
+        transform 0.18s ease,
+        border-color 0.18s ease,
+        background 0.18s ease;
+}
+
+.result-card::after {
+    content: "";
+    position: absolute;
+    inset: auto -20% -45% -20%;
+    height: 90px;
+    background: radial-gradient(
+        circle,
+        rgba(255, 255, 255, 0.12),
+        transparent 65%
+    );
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.result-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255, 255, 255, 0.2);
+    background:
+        linear-gradient(
+            145deg,
+            rgba(255, 255, 255, 0.105),
+            rgba(255, 255, 255, 0.035)
+        ),
+        rgba(0, 0, 0, 0.28);
+}
+
+.result-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1.1rem;
+}
+
+.result-decade {
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.68);
+}
+
+.result-card h3 {
+    position: relative;
+    z-index: 1;
+    margin: 0 0 0.75rem;
+    font-size: 1.05rem;
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+}
+
+.result-card p {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    font-size: 0.88rem;
+    color: rgba(255, 255, 255, 0.68);
+}
+
+.result-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 68px;
+    padding: 0.32rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.64rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.result-pill.finalized {
+    color: rgba(196, 255, 220, 0.98);
+    background: rgba(75, 255, 155, 0.13);
+    border: 1px solid rgba(75, 255, 155, 0.18);
+}
+
+.result-pill.tie {
+    color: rgba(255, 224, 169, 0.98);
+    background: rgba(255, 181, 75, 0.13);
+    border: 1px solid rgba(255, 181, 75, 0.18);
+}
+
+.result-pill.empty {
+    color: rgba(255, 255, 255, 0.62);
+    background: rgba(255, 255, 255, 0.075);
+    border: 1px solid rgba(255, 255, 255, 0.095);
+}
+
+/* ---------------------------------------------------
+   Forms
+--------------------------------------------------- */
+
+.results-form-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.results-input {
+    flex: 1;
+    min-width: 0;
+    height: 48px;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    outline: none;
+    background: rgba(0, 0, 0, 0.28);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 0.92rem;
+}
+
+.results-input::placeholder {
+    color: rgba(255, 255, 255, 0.42);
+}
+
+.results-input:focus {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(0, 0, 0, 0.36);
+}
+
+.results-action-button {
+    width: auto;
+    min-width: 160px;
+    height: 48px;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.results-small-button {
+    height: 40px;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    background: rgba(255, 255, 255, 0.065);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    transition:
+        background 0.18s ease,
+        transform 0.18s ease;
+}
+
+.results-small-button:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.results-small-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+/* ---------------------------------------------------
+   Receipts
+--------------------------------------------------- */
+
+.receipt-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.receipt-card,
+.receipt-verification-card {
+    padding: 1.1rem;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.25);
+}
+
+.receipt-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.58);
+}
+
+.receipt-card h3 {
+    margin: 0 0 0.8rem;
+    font-size: 1rem;
+    letter-spacing: -0.02em;
+}
+
+.receipt-code {
+    margin: 0.75rem 0 0 !important;
+    padding: 0.85rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.065);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", monospace;
+    font-size: 0.78rem !important;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.88);
+    word-break: break-all;
+}
+
+.receipt-verification-card {
+    margin-top: 1rem;
+}
+
+.receipt-verification-card p {
+    margin: 0.75rem 0 0;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+/* ---------------------------------------------------
+   Responsive
+--------------------------------------------------- */
+
+@media (max-width: 950px) {
+    .results-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .receipt-list {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .results-page {
+        padding: 6rem 1rem 3rem;
+    }
+
+    .results-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .results-section {
+        padding: 1rem;
+        border-radius: 22px;
+    }
+
+    .results-section-header,
+    .results-form-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .results-action-button,
+    .results-small-button {
+        width: 100%;
+    }
+}

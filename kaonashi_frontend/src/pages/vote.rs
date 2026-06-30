@@ -332,6 +332,54 @@ fn decade_number(decade_id: u8) -> &'static str {
     }
 }
 
+//reciep
+fn save_local_receipt(
+    public_key: &str,
+    decade_id: u8,
+    movie_index: u8,
+    movie_title: &str,
+    vote_hash: &str,
+) {
+    let window = leptos::prelude::window();
+
+    let Ok(Some(storage)) = window.local_storage() else {
+        return;
+    };
+
+    let storage_key = format!("kaonashi_receipts:{}", public_key);
+
+    let receipt_line = format!(
+        "{}|{}s|{}|{}|{}",
+        decade_id,
+        decade_number(decade_id),
+        movie_index,
+        movie_title,
+        vote_hash
+    );
+
+    let current_receipts = storage
+        .get_item(&storage_key)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    let already_saved = current_receipts
+        .lines()
+        .any(|line| line.split('|').last() == Some(vote_hash));
+
+    if already_saved {
+        return;
+    }
+
+    let updated_receipts = if current_receipts.trim().is_empty() {
+        receipt_line
+    } else {
+        format!("{}\n{}", current_receipts, receipt_line)
+    };
+
+    let _ = storage.set_item(&storage_key, &updated_receipts);
+}
+
 #[component]
 pub fn VotePage(
     page: RwSignal<&'static str>,
@@ -350,6 +398,9 @@ pub fn VotePage(
     let vote_submitted = RwSignal::new(false);
     let vote_message = RwSignal::new(None::<String>);
     let vote_error = RwSignal::new(None::<String>);
+
+    // Receipt hash shown to the user after the vote is accepted.
+    let receipt_hash = RwSignal::new(None::<String>);
 
     let decade_id = selected_decade.get_untracked();
     let movies = movies_for_decade(decade_id);
@@ -393,9 +444,13 @@ pub fn VotePage(
             return;
         };
 
+        let public_key_for_receipt = current_public_key.clone();
+        let movie_name_for_receipt = movie_name.clone();
+
         submitting.set(true);
         vote_message.set(None);
         vote_error.set(None);
+        receipt_hash.set(None);
 
         spawn_local(async move {
             match submit_vote(
@@ -420,6 +475,18 @@ pub fn VotePage(
                             response.movie, response.pending_votes
                         )
                     };
+
+                    if !response.encrypted_vote_hash.is_empty() {
+                        save_local_receipt(
+                            &public_key_for_receipt,
+                            decade_id,
+                            movie_index,
+                            &movie_name_for_receipt,
+                            &response.encrypted_vote_hash,
+                        );
+
+                        receipt_hash.set(Some(response.encrypted_vote_hash));
+                    }
 
                     vote_message.set(Some(message));
                     vote_submitted.set(true);
@@ -495,6 +562,7 @@ pub fn VotePage(
                                             selected_movie.set(Some(movie.index));
                                             vote_message.set(None);
                                             vote_error.set(None);
+                                            receipt_hash.set(None);
                                         }
                                     >
                                         <div class="movie-poster-wrapper">
@@ -612,6 +680,26 @@ pub fn VotePage(
                             <p class="vote-success">
                                 {message}
                             </p>
+                        }
+                    })
+                }}
+
+                {move || {
+                    receipt_hash.get().map(|hash| {
+                        view! {
+                            <div class="vote-receipt-card">
+                                <p class="vote-receipt-label">
+                                    "Your receipt code"
+                                </p>
+
+                                <p class="vote-receipt-code">
+                                    {hash}
+                                </p>
+
+                                <p class="vote-receipt-hint">
+                                    "Save this code. You can use it later to verify that your encrypted vote was included in a batch."
+                                </p>
+                            </div>
                         }
                     })
                 }}

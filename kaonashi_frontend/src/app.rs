@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use crate::{
     components::navbar::Navbar,
     pages::{
-        chairperson::ChairpersonPage, decades::DecadesPage, home::HomePage,
+        chairperson::ChairpersonPage, decades::DecadesPage, home::HomePage, results::ResultsPage,
         tie_resolution::TieResolutionPage, vote::VotePage, wallet::WalletPage,
     },
 };
@@ -20,6 +20,9 @@ pub fn App() -> impl IntoView {
     // A private key NÃO é guardada globalmente.
     let wallet_id = RwSignal::new(None::<String>);
     let wallet_address = RwSignal::new(None::<String>);
+
+    // Estado do fluxo da chairperson.
+    let chairperson_step = RwSignal::new(1_u8);
 
     view! {
         <Navbar page=page />
@@ -46,32 +49,8 @@ pub fn App() -> impl IntoView {
                     }
 
                     "decades" => {
-                        if wallet_id.get().as_deref() == Some("chair_person") {
-                            view! {
-                                <ChairpersonPage
-                                    page=page
-                                    selected_decade=selected_decade
-                                    wallet_id=wallet_id
-                                    wallet_address=wallet_address
-                                />
-                            }
-                            .into_any()
-                        } else {
-                            view! {
-                                <DecadesPage
-                                    page=page
-                                    selected_decade=selected_decade
-                                    wallet_id=wallet_id
-                                    wallet_address=wallet_address
-                                />
-                            }
-                            .into_any()
-                        }
-                    }
-
-                    "tie-resolution" => {
                         view! {
-                            <TieResolutionPage
+                            <DecadesPage
                                 page=page
                                 selected_decade=selected_decade
                                 wallet_id=wallet_id
@@ -84,6 +63,38 @@ pub fn App() -> impl IntoView {
                     "vote" => {
                         view! {
                             <VotePage
+                                page=page
+                                selected_decade=selected_decade
+                                wallet_id=wallet_id
+                                wallet_address=wallet_address
+                            />
+                        }
+                        .into_any()
+                    }
+
+                    "results" => {
+                        view! {
+                            <ResultsPage page=page />
+                        }
+                        .into_any()
+                    }
+
+                    "chairperson" => {
+                        view! {
+                            <ChairpersonPage
+                                page=page
+                                selected_decade=selected_decade
+                                wallet_id=wallet_id
+                                wallet_address=wallet_address
+                                current_step=chairperson_step
+                            />
+                        }
+                        .into_any()
+                    }
+
+                    "tie-resolution" => {
+                        view! {
+                            <TieResolutionPage
                                 page=page
                                 selected_decade=selected_decade
                                 wallet_id=wallet_id

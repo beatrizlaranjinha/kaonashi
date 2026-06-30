@@ -1,34 +1,132 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 
-use crate::blockchain::finalize_election_from_blockchain;
-use crate::blockchain::get_ballot_state_from_blockchain;
-use crate::models::BlockchainBallotResponse;
-use crate::models::FinalResultsResponse;
 use axum::extract::{Path, State};
 use axum::Json;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use solana_zk_sdk::encryption::elgamal::ElGamalPubkey;
 
-use crate::auth::{create_login_message, verify_signature};
+use crate::auth::{create_login_message, verify_chairperson_action, verify_signature};
 use crate::batches::{create_batch_for_decade, MAX_BATCH_SIZE};
-use crate::blockchain::create_all_ballots_on_chain;
+use crate::blockchain::{
+    close_ballot_on_chain, create_all_ballots_on_chain, finalize_election_from_blockchain,
+    get_ballot_state_from_blockchain,
+};
 use crate::keeping_votes::KeepingVotes;
 use crate::merkle::{verify_merkle_proof, MerkleProofNode};
 use crate::models::{
-    ChallengeRequest, ChallengeResponse, ElGamalPublicKeyResponse, FlushBatchResponse,
-    LoginRequest, LoginResponse, PendingEncryptedVote, SubmitVoteResponse, SubmittedVote,
-    VerifyReceiptRequest, VerifyReceiptResponse, VoteReceipt,
+    AdminActionRequest, BlockchainBallotResponse, ChairpersonStatusResponse, ChallengeRequest,
+    ChallengeResponse, ElGamalPublicKeyResponse, ElectionCompletionResponse, FinalResultsResponse,
+    FlushBatchResponse, LoginRequest, LoginResponse, PendingEncryptedVote, SubmitVoteResponse,
+    SubmittedVote, VerifyReceiptRequest, VerifyReceiptResponse, VoteReceipt,
 };
 use crate::movies::movies_decades;
 use crate::zk_verify::verify_encrypted_vote_proofs;
 
-use solana_zk_sdk::encryption::elgamal::ElGamalPubkey;
+// ------------------------------------------------------------
+// Local API state helpers
+// ------------------------------------------------------------
+//
+// These flags live in memory, like the rest of the current API state.
+// create_ballots opens the election.
+// close_election closes it.
+// submit_vote checks both conditions before accepting votes.
 
-// Testa se a API está online.
+const DECADE_COUNT: usize = 6;
+
+static ELECTION_CLOSED_BY_DECADE: LazyLock<Mutex<Vec<bool>>> =
+    LazyLock::new(|| Mutex::new(vec![false; DECADE_COUNT]));
+
+static RESOLVED_TIES_BY_DECADE: LazyLock<Mutex<Vec<Option<usize>>>> =
+    LazyLock::new(|| Mutex::new(vec![None; DECADE_COUNT]));
+
+// ------------------------------------------------------------
+// Local response structs
+// ------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct DecadeOperationResult {
+    pub decade_id: u8,
+    pub success: bool,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CloseElectionResponse {
+    pub success: bool,
+    pub results: Vec<DecadeOperationResult>,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FlushBatchesResponse {
+    pub success: bool,
+    pub total_batches: usize,
+    pub total_votes: usize,
+    pub results: Vec<FlushBatchResponse>,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveTieRequest {
+    pub public_key: String,
+    pub message: String,
+    pub signature: String,
+    pub decade_id: u8,
+    pub winner_index: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResolveTieResponse {
+    pub success: bool,
+    pub decade_id: u8,
+    pub winner_index: usize,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FinalizeElectionResponse {
+    pub success: bool,
+    pub results: Vec<DecadeOperationResult>,
+    pub status: String,
+}
+#[derive(Debug, serde::Serialize)]
+pub struct MovieResult {
+    pub index: usize,
+    pub title: String,
+    pub votes: u64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ResultsResponse {
+    pub decade_id: u8,
+    pub decade: String,
+    pub ballot_address: String,
+    pub total_votes: usize,
+    pub winner_index: Option<usize>,
+    pub winner: Option<String>,
+    pub tie_indices: Vec<usize>,
+    pub final_winner_index: Option<usize>,
+    pub final_winner: Option<String>,
+    pub results: Vec<MovieResult>,
+}
+
+// ------------------------------------------------------------
+// Basic API
+// ------------------------------------------------------------
+
+// Health check endpoint.
+// Used only to confirm that the API server is running.
 pub async fn is_running() -> &'static str {
     "api is indeed running"
 }
 
-// Devolve a ElGamal public key da década.
+// ------------------------------------------------------------
+// ElGamal public key
+// ------------------------------------------------------------
+
+// Returns the ElGamal public key for a decade.
+// The frontend needs this key to encrypt the vote before submitting it.
 pub async fn get_elgamal_public_key(
     Path(decade_id): Path<u8>,
     State(keeping_votes): State<Arc<KeepingVotes>>,
@@ -50,7 +148,21 @@ pub async fn get_elgamal_public_key(
     }))
 }
 
-// Recebe, valida e guarda um voto cifrado.
+// ------------------------------------------------------------
+// Vote submission
+// ------------------------------------------------------------
+
+// Receives an encrypted vote from the frontend.
+// This function checks:
+// 1. the decade exists;
+// 2. the chairperson already created the ballots;
+// 3. the election is not closed;
+// 4. the encrypted vote has the correct shape;
+// 5. the encrypted vote hash matches;
+// 6. the signed message matches the vote;
+// 7. the wallet signature is valid;
+// 8. the ZK proofs are valid;
+// 9. the vote can be stored as pending encrypted vote.
 pub async fn submit_vote(
     State(keeping_votes): State<Arc<KeepingVotes>>,
     Json(vote): Json<SubmittedVote>,
@@ -66,6 +178,33 @@ pub async fn submit_vote(
             "Invalid decade".to_string(),
         ));
     };
+
+    // Important fix:
+    // Users cannot vote before the chairperson creates the ballots.
+    if !ballot_exists(keeping_votes.as_ref(), vote.decade_id) {
+        return Json(vote_response(
+            false,
+            vote.wallet_id,
+            vote.decade_id,
+            format!("{}s", decade_label(vote.decade_id)),
+            0,
+            false,
+            "Election is not ready yet. The chairperson must create the ballots first.".to_string(),
+        ));
+    }
+
+    // After close_election, new votes are rejected.
+    if is_decade_closed(vote.decade_id) {
+        return Json(vote_response(
+            false,
+            vote.wallet_id,
+            vote.decade_id,
+            format!("{}s", decade_label(vote.decade_id)),
+            0,
+            false,
+            "Election is closed".to_string(),
+        ));
+    }
 
     let proposal_count = movies.len();
 
@@ -207,6 +346,7 @@ pub async fn submit_vote(
 
     drop(pending_votes);
 
+    // If enough pending votes exist, the API automatically creates a batch.
     let batch_submitted = if pending_votes_count >= MAX_BATCH_SIZE {
         match create_batch_for_decade(keeping_votes.as_ref(), vote.decade_id) {
             Ok(Some(_)) => true,
@@ -235,7 +375,7 @@ pub async fn submit_vote(
     ))
 }
 
-// Cria uma resposta padrão para submissão de voto.
+// Creates the standard response used by submit_vote.
 fn vote_response(
     accepted: bool,
     wallet_id: String,
@@ -258,7 +398,8 @@ fn vote_response(
     }
 }
 
-// Converte o voto cifrado recebido por JSON para o formato interno.
+// Converts the encrypted vote received through JSON into the internal format.
+// Each ciphertext must have exactly 64 bytes.
 fn normalize_encrypted_vote(
     encrypted_vote: &[Vec<u8>],
     proposal_count: usize,
@@ -289,7 +430,8 @@ fn normalize_encrypted_vote(
         .collect()
 }
 
-// Calcula o hash do voto cifrado.
+// Computes the hash of the encrypted vote.
+// This hash is what the voter signs.
 fn hash_encrypted_vote(encrypted_vote: &[[u8; 64]]) -> String {
     let mut hasher = Sha256::new();
 
@@ -300,52 +442,154 @@ fn hash_encrypted_vote(encrypted_vote: &[[u8; 64]]) -> String {
     hex::encode(hasher.finalize())
 }
 
-// Cria manualmente um batch com os votos pendentes de uma década.
+// ------------------------------------------------------------
+// Batches
+// ------------------------------------------------------------
+
+// Manually creates a batch for one decade.
+// This is used when there are pending votes that did not reach MAX_BATCH_SIZE.
 pub async fn flush_batch(
     Path(decade_id): Path<u8>,
     State(keeping_votes): State<Arc<KeepingVotes>>,
+    Json(admin): Json<AdminActionRequest>,
 ) -> Json<FlushBatchResponse> {
-    if movies_decades(decade_id).is_none() {
-        return Json(FlushBatchResponse {
-            success: false,
+    if let Err(error) = verify_chairperson_action(
+        &admin.public_key,
+        &admin.message,
+        &admin.signature,
+        "flush_batch",
+        Some(decade_id),
+    ) {
+        return Json(empty_flush_response(
+            false,
             decade_id,
-            batch_id: String::new(),
-            merkle_root: String::new(),
-            vote_count: 0,
-            encrypted_batch_tally: Vec::new(),
-            receipts: Vec::new(),
-            status: "No pending encrypted votes".to_string(),
-        });
+            format!("Unauthorized admin action: {}", error),
+        ));
+    }
+
+    if movies_decades(decade_id).is_none() {
+        return Json(empty_flush_response(
+            false,
+            decade_id,
+            "Invalid decade".to_string(),
+        ));
+    }
+
+    if !ballot_exists(keeping_votes.as_ref(), decade_id) {
+        return Json(empty_flush_response(
+            false,
+            decade_id,
+            "No on-chain ballot found. Create ballots first.".to_string(),
+        ));
     }
 
     match create_batch_for_decade(keeping_votes.as_ref(), decade_id) {
         Ok(Some(response)) => Json(response),
 
-        Ok(None) => Json(FlushBatchResponse {
-            success: false,
+        Ok(None) => Json(empty_flush_response(
+            false,
             decade_id,
-            batch_id: String::new(),
-            merkle_root: String::new(),
-            vote_count: 0,
-            encrypted_batch_tally: Vec::new(),
-            receipts: Vec::new(),
-            status: "No pending encrypted votes".to_string(),
-        }),
+            "No pending encrypted votes".to_string(),
+        )),
 
-        Err(error) => Json(FlushBatchResponse {
-            success: false,
-            decade_id,
-            batch_id: String::new(),
-            merkle_root: String::new(),
-            vote_count: 0,
-            encrypted_batch_tally: Vec::new(),
-            receipts: Vec::new(),
-            status: error,
-        }),
+        Err(error) => Json(empty_flush_response(false, decade_id, error)),
     }
 }
 
-// Devolve o receipt de um voto através do hash do voto cifrado.
+// Manually creates pending batches for all decades.
+pub async fn flush_batches(
+    State(keeping_votes): State<Arc<KeepingVotes>>,
+    Json(admin): Json<AdminActionRequest>,
+) -> Json<FlushBatchesResponse> {
+    if let Err(error) = verify_chairperson_action(
+        &admin.public_key,
+        &admin.message,
+        &admin.signature,
+        "flush_batches",
+        None,
+    ) {
+        return Json(FlushBatchesResponse {
+            success: false,
+            total_batches: 0,
+            total_votes: 0,
+            results: Vec::new(),
+            status: format!("Unauthorized admin action: {}", error),
+        });
+    }
+
+    let mut results = Vec::new();
+    let mut total_batches = 0;
+    let mut total_votes = 0;
+
+    for decade_id in 0..DECADE_COUNT as u8 {
+        if movies_decades(decade_id).is_none() {
+            continue;
+        }
+
+        if !ballot_exists(keeping_votes.as_ref(), decade_id) {
+            results.push(empty_flush_response(
+                false,
+                decade_id,
+                "No on-chain ballot found. Create ballots first.".to_string(),
+            ));
+            continue;
+        }
+
+        match create_batch_for_decade(keeping_votes.as_ref(), decade_id) {
+            Ok(Some(response)) => {
+                if response.success {
+                    total_batches += 1;
+                    total_votes += response.vote_count;
+                }
+
+                results.push(response);
+            }
+
+            Ok(None) => {
+                results.push(empty_flush_response(
+                    false,
+                    decade_id,
+                    "No pending encrypted votes".to_string(),
+                ));
+            }
+
+            Err(error) => {
+                results.push(empty_flush_response(false, decade_id, error));
+            }
+        }
+    }
+
+    Json(FlushBatchesResponse {
+        success: true,
+        total_batches,
+        total_votes,
+        results,
+        status: format!(
+            "{} batch(es) submitted with {} pending vote(s).",
+            total_batches, total_votes
+        ),
+    })
+}
+
+// Creates an empty flush response for error or no-op cases.
+fn empty_flush_response(success: bool, decade_id: u8, status: String) -> FlushBatchResponse {
+    FlushBatchResponse {
+        success,
+        decade_id,
+        batch_id: String::new(),
+        merkle_root: String::new(),
+        vote_count: 0,
+        encrypted_batch_tally: Vec::new(),
+        receipts: Vec::new(),
+        status,
+    }
+}
+
+// ------------------------------------------------------------
+// Vote receipts
+// ------------------------------------------------------------
+
+// Returns the receipt of a vote using the encrypted vote hash.
 pub async fn get_vote_receipt(
     Path(vote_hash): Path<String>,
     State(keeping_votes): State<Arc<KeepingVotes>>,
@@ -355,7 +599,7 @@ pub async fn get_vote_receipt(
     Json(receipts.get(&vote_hash).cloned())
 }
 
-// Verifica se o receipt guardado reconstrói a Merkle root.
+// Verifies that a stored vote receipt reconstructs the Merkle root.
 pub async fn verify_vote_receipt(
     State(keeping_votes): State<Arc<KeepingVotes>>,
     Json(payload): Json<VerifyReceiptRequest>,
@@ -396,28 +640,102 @@ pub async fn verify_vote_receipt(
     })
 }
 
-// Devolve resultados antigos em claro.
+// ------------------------------------------------------------
+// Old/plain result endpoints
+// ------------------------------------------------------------
+
+// Returns the old plaintext vote counts.
+// This is kept for debugging and compatibility with older frontend pages.
 pub async fn get_results(
     Path(decade_id): Path<u8>,
     State(keeping_votes): State<Arc<KeepingVotes>>,
-) -> String {
+) -> Json<ResultsResponse> {
     let Some(movies) = movies_decades(decade_id) else {
-        return "invalid decade".to_string();
+        return Json(ResultsResponse {
+            decade_id,
+            decade: "invalid".to_string(),
+            ballot_address: String::new(),
+            total_votes: 0,
+            winner_index: None,
+            winner: None,
+            tie_indices: Vec::new(),
+            final_winner_index: None,
+            final_winner: None,
+            results: Vec::new(),
+        });
     };
 
-    let votes = keeping_votes.votes_by_decade.lock().unwrap();
+    let selected_votes = {
+        let votes = keeping_votes.votes_by_decade.lock().unwrap();
+        votes[decade_id as usize].clone()
+    };
 
-    let selected_decade_votes = &votes[decade_id as usize];
+    let ballot_address = {
+        let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
 
-    movies
+        ballots
+            .get(decade_id as usize)
+            .and_then(|ballot| ballot.as_ref())
+            .cloned()
+            .unwrap_or_default()
+    };
+
+    let results = movies
         .iter()
-        .zip(selected_decade_votes.iter())
-        .map(|(movie, vote_count)| format!("{}:{}", movie, vote_count))
-        .collect::<Vec<String>>()
-        .join("\n")
+        .enumerate()
+        .map(|(index, title)| MovieResult {
+            index,
+            title: title.clone(),
+            votes: selected_votes[index] as u64,
+        })
+        .collect::<Vec<MovieResult>>();
+
+    let total_votes = results.iter().map(|result| result.votes as usize).sum();
+
+    let max_votes = results.iter().map(|result| result.votes).max().unwrap_or(0);
+
+    let tie_indices = if max_votes == 0 {
+        Vec::new()
+    } else {
+        results
+            .iter()
+            .filter_map(|result| {
+                if result.votes == max_votes {
+                    Some(result.index)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<usize>>()
+    };
+
+    let winner_index = if tie_indices.len() == 1 {
+        Some(tie_indices[0])
+    } else {
+        None
+    };
+
+    let winner = winner_index.map(|index| movies[index].clone());
+
+    let final_winner_index = get_resolved_tie(decade_id);
+    let final_winner = final_winner_index.map(|index| movies[index].clone());
+
+    Json(ResultsResponse {
+        decade_id,
+        decade: format!("{}s", decade_label(decade_id)),
+        ballot_address: ballot_address.to_string(),
+        total_votes,
+        winner_index,
+        winner,
+        tie_indices,
+        final_winner_index,
+        final_winner,
+        results,
+    })
 }
 
-// Devolve vencedor antigo em claro.
+// Returns the old plaintext winner.
+// This is kept for debugging and compatibility with older frontend pages.
 pub async fn get_winner(
     Path(decade_id): Path<u8>,
     State(keeping_votes): State<Arc<KeepingVotes>>,
@@ -468,7 +786,7 @@ pub async fn get_winner(
     )
 }
 
-// Devolve os filmes de uma década.
+// Returns the movie list for a decade.
 pub async fn get_movies(Path(decade_id): Path<u8>) -> Json<Option<Vec<String>>> {
     let movies = movies_decades(decade_id)
         .map(|movies| movies.iter().map(|movie| movie.to_string()).collect());
@@ -476,8 +794,30 @@ pub async fn get_movies(Path(decade_id): Path<u8>) -> Json<Option<Vec<String>>> 
     Json(movies)
 }
 
-// Cria os ballots na blockchain.
-pub async fn create_ballots(State(keeping_votes): State<Arc<KeepingVotes>>) -> String {
+// ------------------------------------------------------------
+// Chairperson actions
+// ------------------------------------------------------------
+
+// Creates all on-chain ballots.
+// After this succeeds, the election becomes ready to receive votes.
+pub async fn create_ballots(
+    State(keeping_votes): State<Arc<KeepingVotes>>,
+    Json(admin): Json<AdminActionRequest>,
+) -> String {
+    if let Err(error) = verify_chairperson_action(
+        &admin.public_key,
+        &admin.message,
+        &admin.signature,
+        "create_ballots",
+        None,
+    ) {
+        return format!("Unauthorized admin action: {}", error);
+    }
+
+    if all_ballots_exist(keeping_votes.as_ref()) {
+        return "Ballots already exist. The election is already ready.".to_string();
+    }
+
     let elgamal_public_keys_by_decade = {
         let keypairs = keeping_votes.elgamal_keypairs_by_decade.lock().unwrap();
 
@@ -507,6 +847,23 @@ pub async fn create_ballots(State(keeping_votes): State<Arc<KeepingVotes>>) -> S
                 }
             }
 
+            // Create ballots means the election is ready/open.
+            {
+                let mut closed = ELECTION_CLOSED_BY_DECADE.lock().unwrap();
+
+                for value in closed.iter_mut() {
+                    *value = false;
+                }
+            }
+
+            {
+                let mut resolved_ties = RESOLVED_TIES_BY_DECADE.lock().unwrap();
+
+                for value in resolved_ties.iter_mut() {
+                    *value = None;
+                }
+            }
+
             lines.join("\n")
         }
 
@@ -515,7 +872,360 @@ pub async fn create_ballots(State(keeping_votes): State<Arc<KeepingVotes>>) -> S
         Err(error) => format!("Blockchain task failed: {}", error),
     }
 }
-// Cria uma mensagem de autenticação para a wallet assinar.
+
+// Closes the election for all decades.
+// After this, submit_vote rejects new votes.
+pub async fn close_election(
+    State(keeping_votes): State<Arc<KeepingVotes>>,
+    Json(admin): Json<AdminActionRequest>,
+) -> Json<CloseElectionResponse> {
+    if let Err(error) = verify_chairperson_action(
+        &admin.public_key,
+        &admin.message,
+        &admin.signature,
+        "close_election",
+        None,
+    ) {
+        return Json(CloseElectionResponse {
+            success: false,
+            results: Vec::new(),
+            status: format!("Unauthorized admin action: {}", error),
+        });
+    }
+
+    let mut results = Vec::new();
+
+    for decade_id in 0..DECADE_COUNT as u8 {
+        let ballot = {
+            let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+            ballots
+                .get(decade_id as usize)
+                .and_then(|ballot| ballot.as_ref())
+                .cloned()
+        };
+
+        let Some(ballot) = ballot else {
+            results.push(DecadeOperationResult {
+                decade_id,
+                success: false,
+                status: "No ballot found. Create ballots first.".to_string(),
+            });
+
+            continue;
+        };
+
+        let close_result =
+            tokio::task::spawn_blocking(move || close_ballot_on_chain(ballot, decade_id)).await;
+
+        match close_result {
+            Ok(Ok(())) => {
+                {
+                    let mut closed = ELECTION_CLOSED_BY_DECADE.lock().unwrap();
+                    closed[decade_id as usize] = true;
+                }
+
+                results.push(DecadeOperationResult {
+                    decade_id,
+                    success: true,
+                    status: "Closed".to_string(),
+                });
+            }
+
+            Ok(Err(error)) => {
+                results.push(DecadeOperationResult {
+                    decade_id,
+                    success: false,
+                    status: error,
+                });
+            }
+
+            Err(error) => {
+                results.push(DecadeOperationResult {
+                    decade_id,
+                    success: false,
+                    status: format!("Close task failed: {}", error),
+                });
+            }
+        }
+    }
+
+    let closed_count = results.iter().filter(|result| result.success).count();
+
+    Json(CloseElectionResponse {
+        success: closed_count > 0,
+        results,
+        status: format!("Election closed across {} decade ballot(s).", closed_count),
+    })
+}
+// Stores the chairperson decision for a tied decade.
+// This records which movie index should be used as the tie winner.
+pub async fn resolve_tie(Json(payload): Json<ResolveTieRequest>) -> Json<ResolveTieResponse> {
+    if let Err(error) = verify_chairperson_action(
+        &payload.public_key,
+        &payload.message,
+        &payload.signature,
+        "resolve_tie",
+        Some(payload.decade_id),
+    ) {
+        return Json(ResolveTieResponse {
+            success: false,
+            decade_id: payload.decade_id,
+            winner_index: payload.winner_index,
+            status: format!("Unauthorized admin action: {}", error),
+        });
+    }
+
+    let Some(movies) = movies_decades(payload.decade_id) else {
+        return Json(ResolveTieResponse {
+            success: false,
+            decade_id: payload.decade_id,
+            winner_index: payload.winner_index,
+            status: "Invalid decade".to_string(),
+        });
+    };
+
+    if payload.winner_index >= movies.len() {
+        return Json(ResolveTieResponse {
+            success: false,
+            decade_id: payload.decade_id,
+            winner_index: payload.winner_index,
+            status: "Invalid winner index".to_string(),
+        });
+    }
+
+    {
+        let mut resolved_ties = RESOLVED_TIES_BY_DECADE.lock().unwrap();
+
+        resolved_ties[payload.decade_id as usize] = Some(payload.winner_index);
+    }
+
+    Json(ResolveTieResponse {
+        success: true,
+        decade_id: payload.decade_id,
+        winner_index: payload.winner_index,
+        status: format!(
+            "Tie resolved for decade {} with winner index {}.",
+            payload.decade_id, payload.winner_index
+        ),
+    })
+}
+
+// Finalizes all decade elections.
+// This is the endpoint used by the chairperson frontend button.
+// Finalizes all decade elections.
+// This is the endpoint used by the chairperson frontend button.
+// Finalizes all decade elections.
+// This decrypts the encrypted tallies and detects Finalized / Tie / NoVotes.
+pub async fn finalize_election(
+    State(keeping_votes): State<Arc<KeepingVotes>>,
+    Json(admin): Json<AdminActionRequest>,
+) -> Json<FinalizeElectionResponse> {
+    if let Err(error) = verify_chairperson_action(
+        &admin.public_key,
+        &admin.message,
+        &admin.signature,
+        "finalize_election",
+        None,
+    ) {
+        return Json(FinalizeElectionResponse {
+            success: false,
+            results: Vec::new(),
+            status: format!("Unauthorized admin action: {}", error),
+        });
+    }
+
+    let mut results = Vec::new();
+
+    for decade_id in 0..DECADE_COUNT as u8 {
+        if !ballot_exists(keeping_votes.as_ref(), decade_id) {
+            results.push(DecadeOperationResult {
+                decade_id,
+                success: false,
+                status: "No ballot found. Create ballots first.".to_string(),
+            });
+
+            continue;
+        }
+
+        if !is_decade_closed(decade_id) {
+            results.push(DecadeOperationResult {
+                decade_id,
+                success: false,
+                status: "Election must be closed before finalization.".to_string(),
+            });
+
+            continue;
+        }
+
+        let response = finalize_decade_from_state(keeping_votes.clone(), decade_id).await;
+
+        // Important:
+        // Store the decrypted tally locally so /api/results/{decade_id}
+        // and the tie-resolution page can read the real results.
+        if !response.results.is_empty() {
+            let mut votes = keeping_votes.votes_by_decade.lock().unwrap();
+
+            if let Some(decade_votes) = votes.get_mut(decade_id as usize) {
+                *decade_votes = response.results.iter().map(|votes| *votes as u64).collect();
+            }
+        }
+
+        results.push(DecadeOperationResult {
+            decade_id,
+            success: response.success,
+            status: response.status,
+        });
+    }
+
+    let finalized_count = results
+        .iter()
+        .filter(|result| result.status == "Finalized")
+        .count();
+
+    let tie_count = results
+        .iter()
+        .filter(|result| result.status == "Tie")
+        .count();
+
+    let no_votes_count = results
+        .iter()
+        .filter(|result| result.status == "NoVotes")
+        .count();
+
+    let error_count = results
+        .iter()
+        .filter(|result| !result.success && result.status != "Tie" && result.status != "NoVotes")
+        .count();
+
+    Json(FinalizeElectionResponse {
+        success: tie_count == 0 && error_count == 0 && finalized_count > 0,
+        results,
+        status: format!(
+            "{} decade ballot(s) finalized. {} tie(s) require resolution. {} decade ballot(s) had no votes. {} error(s).",
+            finalized_count, tie_count, no_votes_count, error_count
+        ),
+    })
+}
+
+// Optional compatibility endpoint.
+// Use this if you still keep a route like /api/admin/finalize-election/{decade_id}.
+pub async fn finalize_election_for_decade(
+    Path(decade_id): Path<u8>,
+    State(keeping_votes): State<Arc<KeepingVotes>>,
+    Json(admin): Json<AdminActionRequest>,
+) -> Json<FinalResultsResponse> {
+    if let Err(error) = verify_chairperson_action(
+        &admin.public_key,
+        &admin.message,
+        &admin.signature,
+        "finalize_election",
+        Some(decade_id),
+    ) {
+        return Json(FinalResultsResponse {
+            success: false,
+            decade_id,
+            results: Vec::new(),
+            winner_index: 0,
+            winner_movie: String::new(),
+            total_votes: 0,
+            batch_count: 0,
+            status: format!("Unauthorized admin action: {}", error),
+        });
+    }
+
+    Json(finalize_decade_from_state(keeping_votes, decade_id).await)
+}
+
+// Finalizes one decade by reading the on-chain encrypted tally
+// and decrypting it with the API's ElGamal secret key.
+// Finalizes one decade by reading the on-chain encrypted tally
+// and decrypting it with the API's ElGamal secret key.
+async fn finalize_decade_from_state(
+    keeping_votes: Arc<KeepingVotes>,
+    decade_id: u8,
+) -> FinalResultsResponse {
+    let ballot = {
+        let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+        let Some(ballot) = ballots
+            .get(decade_id as usize)
+            .and_then(|ballot| ballot.as_ref())
+            .cloned()
+        else {
+            return FinalResultsResponse {
+                success: false,
+                decade_id,
+                results: Vec::new(),
+                winner_index: 0,
+                winner_movie: String::new(),
+                total_votes: 0,
+                batch_count: 0,
+                status: "No on-chain ballot found in API memory. Run /api/admin/create-ballots without restarting the API.".to_string(),
+            };
+        };
+
+        ballot
+    };
+
+    let secret_key = {
+        let keypairs = keeping_votes.elgamal_keypairs_by_decade.lock().unwrap();
+
+        let Some(keypair) = keypairs.get(decade_id as usize) else {
+            return FinalResultsResponse {
+                success: false,
+                decade_id,
+                results: Vec::new(),
+                winner_index: 0,
+                winner_movie: String::new(),
+                total_votes: 0,
+                batch_count: 0,
+                status: "No ElGamal keypair found for this decade".to_string(),
+            };
+        };
+
+        keypair.secret().clone()
+    };
+
+    let resolved_winner_index = get_resolved_tie(decade_id);
+
+    let result = tokio::task::spawn_blocking(move || {
+        finalize_election_from_blockchain(ballot, decade_id, secret_key, resolved_winner_index)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(response)) => response,
+
+        Ok(Err(error)) => FinalResultsResponse {
+            success: false,
+            decade_id,
+            results: Vec::new(),
+            winner_index: 0,
+            winner_movie: String::new(),
+            total_votes: 0,
+            batch_count: 0,
+            status: error,
+        },
+
+        Err(error) => FinalResultsResponse {
+            success: false,
+            decade_id,
+            results: Vec::new(),
+            winner_index: 0,
+            winner_movie: String::new(),
+            total_votes: 0,
+            batch_count: 0,
+            status: format!("Finalize task failed: {}", error),
+        },
+    }
+}
+// ------------------------------------------------------------
+// Authentication
+// ------------------------------------------------------------
+
+// Creates a login challenge message for a wallet.
+// The frontend asks the user to sign this message.
 pub async fn create_auth_challenge(
     State(keeping_votes): State<Arc<KeepingVotes>>,
     Json(payload): Json<ChallengeRequest>,
@@ -534,7 +1244,8 @@ pub async fn create_auth_challenge(
     })
 }
 
-// Verifica o login por assinatura.
+// Verifies the login signature.
+// If the signature is valid, the wallet is authenticated.
 pub async fn login_with_signature(
     State(keeping_votes): State<Arc<KeepingVotes>>,
     Json(payload): Json<LoginRequest>,
@@ -561,6 +1272,12 @@ pub async fn login_with_signature(
     }))
 }
 
+// ------------------------------------------------------------
+// Blockchain state
+// ------------------------------------------------------------
+
+// Reads the on-chain ballot state for a decade.
+// Useful for debugging and confirming that batches reached the blockchain.
 pub async fn get_blockchain_ballot(
     Path(decade_id): Path<u8>,
     State(keeping_votes): State<Arc<KeepingVotes>>,
@@ -619,85 +1336,72 @@ pub async fn get_blockchain_ballot(
     }
 }
 
-pub async fn finalize_election(
-    Path(decade_id): Path<u8>,
-    State(keeping_votes): State<Arc<KeepingVotes>>,
-) -> Json<FinalResultsResponse> {
-    let ballot = {
-        let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+// ------------------------------------------------------------
+// Chairperson status
+// ------------------------------------------------------------
 
-        let Some(ballot) = ballots
-            .get(decade_id as usize)
-            .and_then(|ballot| ballot.as_ref())
-            .cloned()
-        else {
-            return Json(FinalResultsResponse {
-                success: false,
-                decade_id,
-                results: Vec::new(),
-                winner_index: 0,
-                winner_movie: String::new(),
-                total_votes: 0,
-                batch_count: 0,
-                status: "No on-chain ballot found in API memory. Run /api/admin/create-ballots without restarting the API.".to_string(),
-            });
-        };
+// Checks whether a given public key is the configured chairperson.
+// This is used only for frontend routing.
+pub async fn get_chairperson_status(
+    Path(public_key): Path<String>,
+) -> Json<ChairpersonStatusResponse> {
+    let chairperson_public_key = std::env::var("CHAIRPERSON_PUBLIC_KEY").unwrap_or_default();
 
-        ballot
-    };
+    let is_chairperson = !chairperson_public_key.is_empty() && public_key == chairperson_public_key;
 
-    let secret_key = {
-        let keypairs = keeping_votes.elgamal_keypairs_by_decade.lock().unwrap();
-
-        let Some(keypair) = keypairs.get(decade_id as usize) else {
-            return Json(FinalResultsResponse {
-                success: false,
-                decade_id,
-                results: Vec::new(),
-                winner_index: 0,
-                winner_movie: String::new(),
-                total_votes: 0,
-                batch_count: 0,
-                status: "No ElGamal keypair found for this decade".to_string(),
-            });
-        };
-
-        keypair.secret().clone()
-    };
-
-    let result = tokio::task::spawn_blocking(move || {
-        finalize_election_from_blockchain(ballot, decade_id, secret_key)
+    Json(ChairpersonStatusResponse {
+        public_key,
+        is_chairperson,
     })
-    .await;
-
-    match result {
-        Ok(Ok(response)) => Json(response),
-
-        Ok(Err(error)) => Json(FinalResultsResponse {
-            success: false,
-            decade_id,
-            results: Vec::new(),
-            winner_index: 0,
-            winner_movie: String::new(),
-            total_votes: 0,
-            batch_count: 0,
-            status: error,
-        }),
-
-        Err(error) => Json(FinalResultsResponse {
-            success: false,
-            decade_id,
-            results: Vec::new(),
-            winner_index: 0,
-            winner_movie: String::new(),
-            total_votes: 0,
-            batch_count: 0,
-            status: format!("Finalize task failed: {}", error),
-        }),
-    }
 }
 
-// Converte decade_id para texto.
+// Compatibility endpoint.
+// Since voting is optional, the election does not require every voter to vote.
+pub async fn get_election_completion() -> Json<ElectionCompletionResponse> {
+    Json(ElectionCompletionResponse {
+        complete: true,
+        eligible_voters: 0,
+        completed_voters: 0,
+        incomplete_voters: Vec::new(),
+    })
+}
+
+// ------------------------------------------------------------
+// Internal helpers
+// ------------------------------------------------------------
+
+// Checks if the API has an on-chain ballot stored for a given decade.
+fn ballot_exists(keeping_votes: &KeepingVotes, decade_id: u8) -> bool {
+    let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+    ballots
+        .get(decade_id as usize)
+        .and_then(|ballot| ballot.as_ref())
+        .is_some()
+}
+
+// Checks if all decade ballots already exist in API memory.
+fn all_ballots_exist(keeping_votes: &KeepingVotes) -> bool {
+    let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
+
+    ballots.iter().all(|ballot| ballot.is_some())
+}
+
+// Checks if a decade is currently closed.
+fn is_decade_closed(decade_id: u8) -> bool {
+    let closed = ELECTION_CLOSED_BY_DECADE.lock().unwrap();
+
+    closed.get(decade_id as usize).copied().unwrap_or(false)
+}
+
+// Returns a resolved tie winner, if the chairperson already chose one.
+fn get_resolved_tie(decade_id: u8) -> Option<usize> {
+    let resolved_ties = RESOLVED_TIES_BY_DECADE.lock().unwrap();
+
+    resolved_ties.get(decade_id as usize).copied().flatten()
+}
+
+// Converts decade_id to a readable decade label.
 fn decade_label(decade_id: u8) -> &'static str {
     match decade_id {
         0 => "1970",

@@ -19,6 +19,10 @@ pub fn Navbar(page: RwSignal<&'static str>) -> impl IntoView {
                 <button on:click=move |_| page.set("decades")>
                     "Ballots"
                 </button>
+
+                <button on:click=move |_| page.set("results")>
+                    "Results"
+                </button>
             </div>
         </nav>
     }

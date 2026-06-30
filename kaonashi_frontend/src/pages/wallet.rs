@@ -1,4 +1,7 @@
 use leptos::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+
+use crate::api::client::get_chairperson_status;
 
 #[component]
 pub fn WalletPage(
@@ -10,24 +13,39 @@ pub fn WalletPage(
     let public_key = RwSignal::new(String::new());
 
     let error = RwSignal::new(None::<String>);
+    let checking_wallet = RwSignal::new(false);
 
     let connect_wallet = move |_| {
-        // valor dos inputs
         let id = wallet_id.get().trim().to_string();
         let key = public_key.get().trim().to_string();
 
-        // A private key só será usada depois, na página de voto.
         if id.is_empty() || key.is_empty() {
             error.set(Some("Enter the wallet ID and public key.".to_string()));
             return;
         }
 
-        // Guardamos wallet id e adress
-        logged_wallet_id.set(Some(id));
-        logged_wallet_address.set(Some(key));
+        checking_wallet.set(true);
+        error.set(None);
 
-        // Avançar para a escolha da década.
-        page.set("decades");
+        spawn_local(async move {
+            match get_chairperson_status(key.clone()).await {
+                Ok(status) => {
+                    logged_wallet_id.set(Some(id));
+                    logged_wallet_address.set(Some(key));
+
+                    if status.is_chairperson {
+                        page.set("chairperson");
+                    } else {
+                        page.set("decades");
+                    }
+                }
+                Err(api_error) => {
+                    error.set(Some(api_error));
+                }
+            }
+
+            checking_wallet.set(false);
+        });
     };
 
     view! {
@@ -79,11 +97,17 @@ pub fn WalletPage(
 
                 <button
                     class="wallet-signin-button"
+                    disabled=move || checking_wallet.get()
                     on:click=connect_wallet
                 >
-                    "Continue to voting"
+                    {move || {
+                        if checking_wallet.get() {
+                            "Checking wallet..."
+                        } else {
+                            "Continue to voting"
+                        }
+                    }}
                 </button>
-
                 <p class="wallet-login-note">
                     "The private key is not stored. It will only be requested when submitting a vote."
                 </p>

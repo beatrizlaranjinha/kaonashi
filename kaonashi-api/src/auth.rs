@@ -71,3 +71,42 @@ pub fn verify_signature(public_key: &str, message: &str, signature: &str) -> Res
 
     Ok(())
 }
+
+pub fn create_admin_message(public_key: &str, action: &str, decade_id: Option<u8>) -> String {
+    match decade_id {
+        Some(decade_id) => format!(
+            "Kaonashi admin action\npublic_key: {}\naction: {}\ndecade_id: {}",
+            public_key, action, decade_id
+        ),
+
+        None => format!(
+            "Kaonashi admin action\npublic_key: {}\naction: {}",
+            public_key, action
+        ),
+    }
+}
+
+pub fn verify_chairperson_action(
+    public_key: &str,
+    message: &str,
+    signature: &str,
+    action: &str,
+    decade_id: Option<u8>,
+) -> Result<(), String> {
+    let chairperson_public_key = std::env::var("CHAIRPERSON_PUBLIC_KEY")
+        .map_err(|_| "CHAIRPERSON_PUBLIC_KEY environment variable is not set".to_string())?;
+
+    if public_key != chairperson_public_key {
+        return Err("Only the chairperson can perform this action".to_string());
+    }
+
+    let expected_message = create_admin_message(public_key, action, decade_id);
+
+    if message != expected_message {
+        return Err("Admin message does not match the requested action".to_string());
+    }
+
+    verify_signature(public_key, message, signature)?;
+
+    Ok(())
+}

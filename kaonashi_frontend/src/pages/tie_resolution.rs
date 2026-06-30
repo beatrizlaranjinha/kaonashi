@@ -12,6 +12,7 @@ struct Movie {
     poster: &'static str,
 }
 
+// Returns the movie list for a decade.
 fn movies_for_decade(decade_id: u8) -> Vec<Movie> {
     match decade_id {
         0 => vec![
@@ -317,6 +318,7 @@ fn movies_for_decade(decade_id: u8) -> Vec<Movie> {
     }
 }
 
+// Returns the decade label shown in the UI.
 fn decade_number(decade_id: u8) -> &'static str {
     match decade_id {
         0 => "1970",
@@ -339,11 +341,17 @@ pub fn TieResolutionPage(
     let selected_movie = RwSignal::new(None::<usize>);
     let tie_indices = RwSignal::new(Vec::<usize>::new());
     let unresolved_decades = RwSignal::new(Vec::<u8>::new());
+
     let loading = RwSignal::new(true);
     let submitting = RwSignal::new(false);
+
     let message = RwSignal::new(None::<String>);
     let error = RwSignal::new(None::<String>);
 
+    // Stores the chairperson private key only while this page is open.
+    let chairperson_secret_key = RwSignal::new(String::new());
+
+    // Loads all decades that still have unresolved ties.
     let load_unresolved_ties = move || {
         loading.set(true);
         error.set(None);
@@ -399,15 +407,18 @@ pub fn TieResolutionPage(
         });
     };
 
+    // Loads unresolved ties when the page opens.
     Effect::new(move |_| {
         load_unresolved_ties();
     });
 
+    // Loads the tie data for one specific decade.
     let load_decade = move |decade_id: u8| {
         loading.set(true);
         selected_movie.set(None);
         message.set(None);
         error.set(None);
+
         current_decade.set(decade_id);
         selected_decade.set(decade_id);
 
@@ -425,6 +436,7 @@ pub fn TieResolutionPage(
         });
     };
 
+    // Confirms the chairperson's chosen winner for the tie.
     let confirm_winner = move |_| {
         let Some(winner_index) = selected_movie.get() else {
             error.set(Some("Select one of the tied movies.".to_string()));
@@ -441,6 +453,13 @@ pub fn TieResolutionPage(
             return;
         };
 
+        let current_secret_key = chairperson_secret_key.get().trim().to_string();
+
+        if current_secret_key.is_empty() {
+            error.set(Some("Chairperson private key is missing.".to_string()));
+            return;
+        }
+
         let decade_id = current_decade.get();
 
         submitting.set(true);
@@ -451,6 +470,7 @@ pub fn TieResolutionPage(
             match resolve_tie(
                 current_wallet_id,
                 current_public_key,
+                current_secret_key,
                 decade_id,
                 winner_index,
             )
@@ -500,7 +520,7 @@ pub fn TieResolutionPage(
                 <header class="movies-header">
                     <button
                         class="back-button"
-                        on:click=move |_| page.set("decades")
+                        on:click=move |_| page.set("chairperson")
                     >
                         "← Back to chairperson"
                     </button>
@@ -519,6 +539,17 @@ pub fn TieResolutionPage(
                         </p>
                     </div>
                 </header>
+
+                <div class="wallet-login-fields chairperson-actions">
+                    <input
+                        type="password"
+                        placeholder="Chairperson private key"
+                        prop:value=move || chairperson_secret_key.get()
+                        on:input=move |event| {
+                            chairperson_secret_key.set(event_target_value(&event));
+                        }
+                    />
+                </div>
 
                 {move || {
                     let decades = unresolved_decades.get();

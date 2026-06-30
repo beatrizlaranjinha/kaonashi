@@ -105,6 +105,13 @@ pub struct LoginResponse {
     pub public_key: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AdminActionRequest {
+    pub public_key: String,
+    pub message: String,
+    pub signature: String,
+}
+
 // =======================================================
 // BATCHES / MERKLE RECEIPTS
 // =======================================================
@@ -192,4 +199,24 @@ pub struct FinalResultsResponse {
     pub total_votes: u64,
     pub batch_count: u64,
     pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChairpersonStatusResponse {
+    pub public_key: String,
+    pub is_chairperson: bool,
+}
+#[derive(Debug, Serialize)]
+pub struct IncompleteVoter {
+    pub wallet_id: String,
+    pub missing_decades: Vec<u8>,
+    pub missing_decade_names: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ElectionCompletionResponse {
+    pub complete: bool,
+    pub eligible_voters: usize,
+    pub completed_voters: usize,
+    pub incomplete_voters: Vec<IncompleteVoter>,
 }

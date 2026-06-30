@@ -13,7 +13,7 @@ use solana_zk_sdk::encryption::elgamal::ElGamalPubkey;
 const API_BASE_URL: &str = "http://127.0.0.1:3000";
 
 // =======================================================
-// ERROS DA API
+// API ERRORS
 // =======================================================
 
 #[derive(Debug, Deserialize)]
@@ -22,7 +22,7 @@ pub struct ApiErrorResponse {
 }
 
 // =======================================================
-// AUTENTICAÇÃO DA WALLET
+// WALLET AUTHENTICATION
 // =======================================================
 
 #[derive(Debug, Serialize)]
@@ -47,14 +47,19 @@ pub struct WalletLoginRequest {
 pub struct WalletLoginResponse {
     pub authenticated: bool,
     pub public_key: String,
+
+    // Some backend responses may not include a token.
+    // This keeps the frontend compatible with both versions.
+    #[serde(default)]
     pub token: String,
 }
 
+// Requests a challenge from the backend, signs it with the wallet private key,
+// and sends the signed message back to authenticate the wallet.
 pub async fn login_wallet(
     public_key: String,
     secret_key: String,
 ) -> Result<WalletLoginResponse, String> {
-    // 1. Pedir ao backend uma mensagem/challenge para assinar.
     let response = Request::post(&format!("{API_BASE_URL}/api/auth/challenge"))
         .header("Content-Type", "application/json")
         .json(&ChallengeRequest {
@@ -79,8 +84,6 @@ pub async fn login_wallet(
         };
     };
 
-    // 2. Converter a secret key base58 para bytes.
-    // Nesta versão de login estás a usar uma private key de 32 bytes.
     let secret_key_bytes = bs58::decode(secret_key.trim())
         .into_vec()
         .map_err(|error| format!("Invalid base58 secret key: {error}"))?;
@@ -95,16 +98,10 @@ pub async fn login_wallet(
     let mut secret_key_array = [0u8; 32];
     secret_key_array.copy_from_slice(&secret_key_bytes);
 
-    // 3. Criar SigningKey a partir da private key.
     let mut signing_key = SigningKey::from_bytes(&secret_key_array);
-
-    // 4. Assinar a mensagem recebida do backend.
     let signature = signing_key.sign(challenge.message.as_bytes());
-
-    // 5. Converter assinatura para base58.
     let signature_base58 = bs58::encode(signature.to_bytes()).into_string();
 
-    // 6. Enviar public_key + message + signature para o backend validar.
     let response = Request::post(&format!("{API_BASE_URL}/api/auth/login"))
         .header("Content-Type", "application/json")
         .json(&WalletLoginRequest {
@@ -133,16 +130,55 @@ pub async fn login_wallet(
 }
 
 // =======================================================
-// VOTOS CIFRADOS
+// CHAIRPERSON STATUS
+// =======================================================
+
+#[derive(Debug, Deserialize)]
+pub struct ChairpersonStatusResponse {
+    pub public_key: String,
+    pub is_chairperson: bool,
+}
+
+// Checks if the connected public key is the configured chairperson.
+// This is only used for frontend routing.
+pub async fn get_chairperson_status(
+    public_key: String,
+) -> Result<ChairpersonStatusResponse, String> {
+    let response = Request::get(&format!(
+        "{API_BASE_URL}/api/chairperson/status/{public_key}"
+    ))
+    .send()
+    .await
+    .map_err(|error| format!("Failed to contact the API: {error}"))?;
+
+    if response.ok() {
+        response
+            .json::<ChairpersonStatusResponse>()
+            .await
+            .map_err(|error| format!("Invalid chairperson status response: {error}"))
+    } else {
+        let status = response.status();
+
+        match response.json::<ApiErrorResponse>().await {
+            Ok(api_error) => Err(api_error.error),
+            Err(_) => Err(format!(
+                "Failed to check chairperson status with status {status}"
+            )),
+        }
+    }
+}
+
+// =======================================================
+// ENCRYPTED VOTING
 // =======================================================
 
 #[derive(Debug, Deserialize)]
 pub struct ElGamalPublicKeyResponse {
     pub decade_id: u8,
+
+    #[serde(default)]
     pub decade: String,
 
-    // Public key ElGamal da década/ballot.
-    // O frontend usa esta chave para cifrar o voto.
     pub public_key: Vec<u8>,
 }
 
@@ -186,22 +222,37 @@ pub struct SubmitVoteRequest {
 #[derive(Debug, Deserialize)]
 pub struct SubmitVoteResponse {
     pub accepted: bool,
+
+    #[serde(default)]
+    pub wallet_id: String,
+
     pub decade_id: u8,
+
+    #[serde(default)]
+    pub encrypted_vote_hash: String,
+
+    // This was the field causing the frontend crash.
+    // It is now defaulted so the frontend does not fail if the backend omits it.
+    #[serde(default)]
     pub decade: String,
 
-    // O backend já não sabe o filme escolhido.
-    // Estes campos ficam com default para o frontend continuar a mostrar a UI.
     #[serde(default)]
     pub movie_index: usize,
 
     #[serde(default)]
     pub movie: String,
 
+    #[serde(default)]
+    pub status: String,
+
+    #[serde(default)]
     pub pending_votes: usize,
+
+    #[serde(default)]
     pub batch_submitted: bool,
 }
-
-// Vai buscar ao backend a ElGamal public key da década escolhida.
+// Fetches the ElGamal public key for the selected decade.
+// The frontend uses this key to encrypt the vote locally.
 async fn get_elgamal_public_key(decade_id: u8) -> Result<ElGamalPubkey, String> {
     let response = Request::get(&format!(
         "{API_BASE_URL}/api/election/{decade_id}/elgamal-public-key"
@@ -226,7 +277,6 @@ async fn get_elgamal_public_key(decade_id: u8) -> Result<ElGamalPubkey, String> 
         };
     };
 
-    // A ElGamal public key deve ter 32 bytes.
     if response.public_key.len() != 32 {
         return Err(format!(
             "ElGamal public key must have 32 bytes, got {}",
@@ -238,6 +288,8 @@ async fn get_elgamal_public_key(decade_id: u8) -> Result<ElGamalPubkey, String> 
         .map_err(|_| "Invalid ElGamal public key bytes".to_string())
 }
 
+// Creates a one-hot vote vector, encrypts it, generates ZK proofs,
+// signs the encrypted vote hash, and submits everything to the backend.
 pub async fn submit_vote(
     wallet_id: String,
     public_key: String,
@@ -246,23 +298,10 @@ pub async fn submit_vote(
     movie_index: usize,
     movie_name: String,
 ) -> Result<SubmitVoteResponse, String> {
-    // 1. Buscar a ElGamal public key da década.
-    // Esta chave pertence à eleição/década, não à wallet.
     let elgamal_public_key = get_elgamal_public_key(decade_id).await?;
 
-    // 2. Criar o vetor one-hot localmente.
-    //
-    // Exemplo:
-    // movie_index = 2
-    // vote_vector = [0,0,1,0,0,0,0,0]
     let vote_vector = create_vote_vector(movie_index, 8)?;
 
-    // 3. Validar e cifrar o voto.
-    //
-    // Dentro de encrypt_vote:
-    // - validate_vote_vector verifica VoteProof e VoteSumProof localmente
-    // - cada valor é cifrado com ElGamal
-    // - agora usando PedersenOpening no vote_crypto.rs
     let encrypted_witness = encrypt_vote_with_witness(&vote_vector, &elgamal_public_key)?;
 
     let encrypted_vote = encrypted_witness.encrypted_vote;
@@ -282,44 +321,24 @@ pub async fn submit_vote(
     let vote_sum_proof =
         generate_vote_sum_proof(&elgamal_public_key, &encrypted_vote, &opening_scalars)?;
 
-    // TESTE: estragar a proof de propósito
-    /*let mut vote_proofs = vote_proofs;
-    vote_proofs[0].c0[0] ^= 1;*/
-
-    // 4. Calcular hash do voto cifrado.
-    // Este hash identifica exatamente os ciphertexts enviados.
     let encrypted_vote_hash = hash_encrypted_vote(&encrypted_vote);
 
-    // 5. Criar mensagem assinada.
-    //
-    // A mensagem não contém movie_index nem movie_name.
-    // Assim, o backend não recebe o voto em claro.
-    //
-    // IMPORTANTE:
-    // Este texto tem de ser igual ao texto reconstruído no backend.
     let message = format!(
         "Kaonashi encrypted vote\nwallet_id: {}\npublic_key: {}\ndecade_id: {}\nencrypted_vote_hash: {}",
-        wallet_id,
-        public_key,
-        decade_id,
-        encrypted_vote_hash
+        wallet_id, public_key, decade_id, encrypted_vote_hash
     );
 
-    // 6. Assinar mensagem com a secret key da wallet.
     let signature_base58 = sign_message(&secret_key, &message)?;
 
     leptos::logging::log!("ENCRYPTED VOTE HASH: {}", encrypted_vote_hash);
     leptos::logging::log!("SIGNED MESSAGE: {}", message);
     leptos::logging::log!("VOTE SIGNATURE: {}", signature_base58);
 
-    // 7. Converter Vec<[u8; 64]> para Vec<Vec<u8>>.
-    // JSON não envia arrays fixos [u8; 64] diretamente.
     let encrypted_vote_json = encrypted_vote
         .iter()
         .map(|ciphertext| ciphertext.to_vec())
         .collect::<Vec<Vec<u8>>>();
 
-    // 8. Enviar voto cifrado para a API.
     let response = Request::post(&format!("{API_BASE_URL}/api/vote"))
         .header("Content-Type", "application/json")
         .json(&SubmitVoteRequest {
@@ -327,7 +346,7 @@ pub async fn submit_vote(
             public_key,
             decade_id,
             encrypted_vote: encrypted_vote_json,
-            encrypted_vote_hash,
+            encrypted_vote_hash: encrypted_vote_hash.clone(),
             vote_proofs,
             vote_sum_proof,
             message,
@@ -344,11 +363,19 @@ pub async fn submit_vote(
             .await
             .map_err(|error| format!("Invalid API response: {error}"))?;
 
-        // Como o backend já não sabe o filme escolhido,
-        // preenchemos estes campos localmente só para a UI.
+        // The backend does not need to return the selected movie.
+        // The frontend already knows it, so we fill it here for display.
+        // The backend does not need to return the selected movie.
+        // The frontend already knows it, so we fill it here for display.
         if vote_response.movie.is_empty() {
             vote_response.movie = movie_name;
             vote_response.movie_index = movie_index;
+        }
+
+        // The frontend already computed the encrypted vote hash.
+        // We keep it in the response so the UI can show it as the user's receipt code.
+        if vote_response.encrypted_vote_hash.is_empty() {
+            vote_response.encrypted_vote_hash = encrypted_vote_hash;
         }
 
         Ok(vote_response)
@@ -363,37 +390,133 @@ pub async fn submit_vote(
 }
 
 // =======================================================
-// BATCHES
+// ADMIN SIGNED REQUESTS
 // =======================================================
 
 #[derive(Debug, Serialize)]
-pub struct FlushBatchRequest {
-    pub wallet_id: String,
+pub struct AdminActionRequest {
     pub public_key: String,
-    pub decade_id: u8,
+    pub message: String,
+    pub signature: String,
 }
+
+// Builds the exact admin message expected by the backend.
+// The action name must match the backend action string exactly.
+fn create_admin_message(public_key: &str, action: &str, decade_id: Option<u8>) -> String {
+    match decade_id {
+        Some(decade_id) => format!(
+            "Kaonashi admin action\npublic_key: {}\naction: {}\ndecade_id: {}",
+            public_key, action, decade_id
+        ),
+        None => format!(
+            "Kaonashi admin action\npublic_key: {}\naction: {}",
+            public_key, action
+        ),
+    }
+}
+
+// Creates a signed admin request using the chairperson private key.
+// The private key stays in the frontend and is only used locally for signing.
+fn create_signed_admin_request(
+    public_key: &str,
+    secret_key: &str,
+    action: &str,
+    decade_id: Option<u8>,
+) -> Result<AdminActionRequest, String> {
+    let message = create_admin_message(public_key, action, decade_id);
+    let signature = sign_message(secret_key, &message)?;
+
+    Ok(AdminActionRequest {
+        public_key: public_key.to_string(),
+        message,
+        signature,
+    })
+}
+
+// =======================================================
+// BATCHES
+// =======================================================
 
 #[derive(Debug, Deserialize)]
 pub struct FlushBatchResponse {
+    #[serde(default)]
+    pub success: bool,
+
+    #[serde(default)]
     pub submitted: bool,
+
     pub decade_id: u8,
+
+    #[serde(default)]
     pub decade: String,
+
+    #[serde(default)]
+    pub batch_id: String,
+
+    #[serde(default)]
+    pub merkle_root: String,
+
+    #[serde(default)]
+    pub vote_count: usize,
+
+    #[serde(default)]
     pub batch_size: usize,
+
+    #[serde(default)]
     pub pending_votes: usize,
+
+    #[serde(default)]
+    pub encrypted_batch_tally: Vec<Vec<u8>>,
+
+    #[serde(default)]
+    pub receipts: Vec<VoteReceiptResponse>,
+
+    #[serde(default)]
+    pub status: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct VoteReceiptResponse {
+    #[serde(default)]
+    pub vote_hash: String,
+
+    #[serde(default)]
+    pub batch_id: String,
+
+    #[serde(default)]
+    pub merkle_root: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FlushBatchesResponse {
+    pub success: bool,
+
+    #[serde(default)]
+    pub total_batches: usize,
+
+    #[serde(default)]
+    pub total_votes: usize,
+
+    #[serde(default)]
+    pub results: Vec<FlushBatchResponse>,
+
+    #[serde(default)]
+    pub status: String,
+}
+
+// Submits the pending batch of one decade.
 pub async fn flush_batch(
-    wallet_id: String,
+    _wallet_id: String,
     public_key: String,
+    secret_key: String,
     decade_id: u8,
 ) -> Result<FlushBatchResponse, String> {
-    let response = Request::post(&format!("{API_BASE_URL}/api/admin/flush-batch"))
+    let admin_request =
+        create_signed_admin_request(&public_key, &secret_key, "flush_batch", Some(decade_id))?;
+
+    let response = Request::post(&format!("{API_BASE_URL}/api/admin/flush-batch/{decade_id}"))
         .header("Content-Type", "application/json")
-        .json(&FlushBatchRequest {
-            wallet_id,
-            public_key,
-            decade_id,
-        })
+        .json(&admin_request)
         .map_err(|error| format!("Failed to create flush request: {error}"))?
         .send()
         .await
@@ -414,24 +537,18 @@ pub async fn flush_batch(
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct FlushBatchesResponse {
-    pub submitted: bool,
-    pub total_batches: usize,
-    pub total_votes: usize,
-    pub results: Vec<DecadeOperationResult>,
-}
-
+// Submits all pending batches from all decades.
 pub async fn flush_batches(
-    wallet_id: String,
+    _wallet_id: String,
     public_key: String,
+    secret_key: String,
 ) -> Result<FlushBatchesResponse, String> {
+    let admin_request =
+        create_signed_admin_request(&public_key, &secret_key, "flush_batches", None)?;
+
     let response = Request::post(&format!("{API_BASE_URL}/api/admin/flush-batches"))
         .header("Content-Type", "application/json")
-        .json(&AdminElectionRequest {
-            wallet_id,
-            public_key,
-        })
+        .json(&admin_request)
         .map_err(|error| format!("Failed to create flush batches request: {error}"))?
         .send()
         .await
@@ -453,7 +570,7 @@ pub async fn flush_batches(
 }
 
 // =======================================================
-// RESULTADOS
+// RESULTS
 // =======================================================
 
 #[derive(Debug, Deserialize, Clone)]
@@ -466,17 +583,41 @@ pub struct MovieResult {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ResultsResponse {
     pub decade_id: u8,
+
+    #[serde(default)]
     pub decade: String,
+
+    #[serde(default)]
     pub ballot_address: String,
+
+    #[serde(default)]
     pub total_votes: usize,
+
+    #[serde(default)]
     pub winner_index: Option<usize>,
+
+    #[serde(default)]
     pub winner: Option<String>,
+
+    #[serde(default)]
     pub tie_indices: Vec<usize>,
+
+    #[serde(default)]
     pub final_winner_index: Option<usize>,
+
+    #[serde(default)]
     pub final_winner: Option<String>,
+
+    #[serde(default)]
     pub results: Vec<MovieResult>,
 }
 
+// Fetches the decrypted results for one decade.
+//
+// NOTE:
+// This expects /api/results/{decade_id} to return JSON.
+// If the backend still returns plaintext lines like "Movie:0",
+// the backend endpoint must be updated before the tie-resolution page works.
 pub async fn get_results(decade_id: u8) -> Result<ResultsResponse, String> {
     let response = Request::get(&format!("{API_BASE_URL}/api/results/{decade_id}"))
         .send()
@@ -499,40 +640,50 @@ pub async fn get_results(decade_id: u8) -> Result<ResultsResponse, String> {
 }
 
 // =======================================================
-// EMPATES
+// TIE RESOLUTION
 // =======================================================
 
 #[derive(Debug, Serialize)]
 pub struct ResolveTieRequest {
-    pub wallet_id: String,
     pub public_key: String,
+    pub message: String,
+    pub signature: String,
     pub decade_id: u8,
     pub winner_index: usize,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ResolveTieResponse {
-    pub resolved: bool,
+    pub success: bool,
     pub decade_id: u8,
-    pub decade: String,
     pub winner_index: usize,
-    pub winner: String,
+
+    #[serde(default)]
+    pub status: String,
 }
 
+// Resolves a tie by signing the chairperson's chosen winner.
 pub async fn resolve_tie(
-    wallet_id: String,
+    _wallet_id: String,
     public_key: String,
+    secret_key: String,
     decade_id: u8,
     winner_index: usize,
 ) -> Result<ResolveTieResponse, String> {
+    let admin_request =
+        create_signed_admin_request(&public_key, &secret_key, "resolve_tie", Some(decade_id))?;
+
+    let request = ResolveTieRequest {
+        public_key: admin_request.public_key,
+        message: admin_request.message,
+        signature: admin_request.signature,
+        decade_id,
+        winner_index,
+    };
+
     let response = Request::post(&format!("{API_BASE_URL}/api/admin/resolve-tie"))
         .header("Content-Type", "application/json")
-        .json(&ResolveTieRequest {
-            wallet_id,
-            public_key,
-            decade_id,
-            winner_index,
-        })
+        .json(&request)
         .map_err(|error| format!("Failed to create tie request: {error}"))?
         .send()
         .await
@@ -554,82 +705,176 @@ pub async fn resolve_tie(
 }
 
 // =======================================================
-// ESTADO DA ELEIÇÃO
+// RECEIPTS
 // =======================================================
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct IncompleteVoter {
-    pub wallet_id: String,
-    pub missing_decades: Vec<u8>,
-    pub missing_decade_names: Vec<String>,
+#[derive(Debug, Serialize)]
+pub struct VerifyReceiptRequest {
+    pub vote_hash: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ElectionCompletionResponse {
-    pub complete: bool,
-    pub eligible_voters: usize,
-    pub completed_voters: usize,
-    pub incomplete_voters: Vec<IncompleteVoter>,
+pub struct StoredVoteReceiptResponse {
+    #[serde(default)]
+    pub vote_hash: String,
+
+    #[serde(default)]
+    pub batch_id: String,
+
+    #[serde(default)]
+    pub merkle_root: String,
 }
 
-pub async fn get_election_completion() -> Result<ElectionCompletionResponse, String> {
-    let response = Request::get(&format!("{API_BASE_URL}/api/admin/election-completion"))
+#[derive(Debug, Deserialize, Clone)]
+pub struct VerifyReceiptResponse {
+    #[serde(default)]
+    pub vote_hash: String,
+
+    #[serde(default)]
+    pub verified: bool,
+
+    #[serde(default)]
+    pub batch_id: String,
+
+    #[serde(default)]
+    pub merkle_root: String,
+
+    #[serde(default)]
+    pub status: String,
+}
+
+// Fetches a stored receipt by vote hash.
+pub async fn get_vote_receipt(
+    vote_hash: String,
+) -> Result<Option<StoredVoteReceiptResponse>, String> {
+    let response = Request::get(&format!("{API_BASE_URL}/api/vote/receipt/{vote_hash}"))
         .send()
         .await
         .map_err(|error| format!("Failed to contact the API: {error}"))?;
 
     if response.ok() {
         response
-            .json::<ElectionCompletionResponse>()
+            .json::<Option<StoredVoteReceiptResponse>>()
             .await
-            .map_err(|error| format!("Invalid API response: {error}"))
+            .map_err(|error| format!("Invalid receipt response: {error}"))
     } else {
         let status = response.status();
 
         match response.json::<ApiErrorResponse>().await {
             Ok(api_error) => Err(api_error.error),
-            Err(_) => Err(format!(
-                "Failed to load election completion with status {status}"
-            )),
+            Err(_) => Err(format!("Failed to load receipt with status {status}")),
         }
     }
 }
 
-// =======================================================
-// FUNÇÕES CHAIRPERSON
-// =======================================================
+// Verifies a receipt using its Merkle proof.
+pub async fn verify_vote_receipt(vote_hash: String) -> Result<VerifyReceiptResponse, String> {
+    let response = Request::post(&format!("{API_BASE_URL}/api/vote/verify-receipt"))
+        .header("Content-Type", "application/json")
+        .json(&VerifyReceiptRequest { vote_hash })
+        .map_err(|error| format!("Failed to create receipt verification request: {error}"))?
+        .send()
+        .await
+        .map_err(|error| format!("Failed to contact the API: {error}"))?;
 
-#[derive(Debug, Serialize)]
-pub struct AdminElectionRequest {
-    pub wallet_id: String,
-    pub public_key: String,
+    if response.ok() {
+        response
+            .json::<VerifyReceiptResponse>()
+            .await
+            .map_err(|error| format!("Invalid receipt verification response: {error}"))
+    } else {
+        let status = response.status();
+
+        match response.json::<ApiErrorResponse>().await {
+            Ok(api_error) => Err(api_error.error),
+            Err(_) => Err(format!("Failed to verify receipt with status {status}")),
+        }
+    }
 }
+// =======================================================
+// CHAIRPERSON ACTIONS
+// =======================================================
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct DecadeOperationResult {
     pub decade_id: u8,
+
+    #[serde(default)]
     pub decade: String,
+
     pub success: bool,
+
+    #[serde(default)]
     pub status: String,
+
+    #[serde(default)]
     pub message: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CloseElectionResponse {
-    pub closed: bool,
+    pub success: bool,
+
+    #[serde(default)]
     pub results: Vec<DecadeOperationResult>,
+
+    #[serde(default)]
+    pub status: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FinalizeElectionResponse {
+    pub success: bool,
+
+    #[serde(default)]
+    pub results: Vec<DecadeOperationResult>,
+
+    #[serde(default)]
+    pub status: String,
+}
+
+// Creates all on-chain ballots.
+// After this succeeds, the election is ready to receive votes.
+pub async fn create_ballots(public_key: String, secret_key: String) -> Result<String, String> {
+    let admin_request =
+        create_signed_admin_request(&public_key, &secret_key, "create_ballots", None)?;
+
+    let response = Request::post(&format!("{API_BASE_URL}/api/admin/create-ballots"))
+        .header("Content-Type", "application/json")
+        .json(&admin_request)
+        .map_err(|error| format!("Failed to create ballots request: {error}"))?
+        .send()
+        .await
+        .map_err(|error| format!("Failed to contact the API: {error}"))?;
+
+    if response.ok() {
+        response
+            .text()
+            .await
+            .map_err(|error| format!("Invalid create ballots response: {error}"))
+    } else {
+        let status = response.status();
+
+        match response.json::<ApiErrorResponse>().await {
+            Ok(api_error) => Err(api_error.error),
+            Err(_) => Err(format!("Failed to create ballots with status {status}")),
+        }
+    }
+}
+
+// Closes the election.
+// After this succeeds, the API rejects new vote submissions.
 pub async fn close_election(
-    wallet_id: String,
+    _wallet_id: String,
     public_key: String,
+    secret_key: String,
 ) -> Result<CloseElectionResponse, String> {
+    let admin_request =
+        create_signed_admin_request(&public_key, &secret_key, "close_election", None)?;
+
     let response = Request::post(&format!("{API_BASE_URL}/api/admin/close-election"))
         .header("Content-Type", "application/json")
-        .json(&AdminElectionRequest {
-            wallet_id,
-            public_key,
-        })
+        .json(&admin_request)
         .map_err(|error| format!("Failed to create close election request: {error}"))?
         .send()
         .await
@@ -650,22 +895,18 @@ pub async fn close_election(
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct FinalizeElectionResponse {
-    pub finalized: bool,
-    pub results: Vec<DecadeOperationResult>,
-}
-
+// Finalizes the election after batches and tie resolution.
 pub async fn finalize_election(
-    wallet_id: String,
+    _wallet_id: String,
     public_key: String,
+    secret_key: String,
 ) -> Result<FinalizeElectionResponse, String> {
+    let admin_request =
+        create_signed_admin_request(&public_key, &secret_key, "finalize_election", None)?;
+
     let response = Request::post(&format!("{API_BASE_URL}/api/admin/finalize-election"))
         .header("Content-Type", "application/json")
-        .json(&AdminElectionRequest {
-            wallet_id,
-            public_key,
-        })
+        .json(&admin_request)
         .map_err(|error| format!("Failed to create finalize request: {error}"))?
         .send()
         .await

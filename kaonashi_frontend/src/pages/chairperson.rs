@@ -1,10 +1,8 @@
+use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::api::client::{
-    close_election, finalize_election, flush_batches, get_election_completion,
-    ElectionCompletionResponse,
-};
+use crate::api::client::{close_election, create_ballots, finalize_election, flush_batches};
 
 #[component]
 pub fn ChairpersonPage(
@@ -12,34 +10,20 @@ pub fn ChairpersonPage(
     selected_decade: RwSignal<u8>,
     wallet_id: RwSignal<Option<String>>,
     wallet_address: RwSignal<Option<String>>,
+    current_step: RwSignal<u8>,
 ) -> impl IntoView {
-    let _ = selected_decade;
-
-    let loading_completion = RwSignal::new(true);
     let submitting = RwSignal::new(false);
-    let completion = RwSignal::new(None::<ElectionCompletionResponse>);
-
-    // 1: close, 2: batches, 3: ties, 4: finalize, 5: complete
-    let current_step = RwSignal::new(1_u8);
 
     let success_message = RwSignal::new(None::<String>);
     let error_message = RwSignal::new(None::<String>);
 
-    let refresh_completion = move || {
-        loading_completion.set(true);
+    // Number of unresolved ties found during the decrypt/detect step.
+    let detected_ties = RwSignal::new(0_usize);
 
-        spawn_local(async move {
-            match get_election_completion().await {
-                Ok(response) => completion.set(Some(response)),
-                Err(error) => error_message.set(Some(error)),
-            }
+    // Stores the private key only while this page is open.
+    let chairperson_secret_key = RwSignal::new(String::new());
 
-            loading_completion.set(false);
-        });
-    };
-
-    Effect::new(move |_| refresh_completion());
-
+    // Gets the chairperson credentials for signed admin actions.
     let credentials = move || {
         let wallet = wallet_id
             .get()
@@ -49,11 +33,18 @@ pub fn ChairpersonPage(
             .get()
             .ok_or_else(|| "Chairperson public key is missing.".to_string())?;
 
-        Ok::<_, String>((wallet, public_key))
+        let secret_key = chairperson_secret_key.get().trim().to_string();
+
+        if secret_key.is_empty() {
+            return Err("Chairperson private key is missing.".to_string());
+        }
+
+        Ok::<_, String>((wallet, public_key, secret_key))
     };
 
-    let close_global_election = move |_| {
-        let Ok((wallet, public_key)) = credentials() else {
+    // Creates all on-chain ballots.
+    let create_global_ballots = move |_: MouseEvent| {
+        let Ok((_wallet, public_key, secret_key)) = credentials() else {
             error_message.set(Some("Chairperson credentials are missing.".to_string()));
             return;
         };
@@ -61,17 +52,13 @@ pub fn ChairpersonPage(
         submitting.set(true);
         success_message.set(None);
         error_message.set(None);
+        detected_ties.set(0);
 
         spawn_local(async move {
-            match close_election(wallet, public_key).await {
+            match create_ballots(public_key, secret_key).await {
                 Ok(response) => {
-                    let closed = response.results.iter().filter(|r| r.success).count();
-
-                    success_message.set(Some(format!(
-                        "Election closed across {closed} decade ballots."
-                    )));
+                    success_message.set(Some(response));
                     current_step.set(2);
-                    refresh_completion();
                 }
                 Err(error) => error_message.set(Some(error)),
             }
@@ -80,8 +67,9 @@ pub fn ChairpersonPage(
         });
     };
 
-    let submit_all_batches = move |_| {
-        let Ok((wallet, public_key)) = credentials() else {
+    // Closes the election when voting is over.
+    let close_global_election = move |_: MouseEvent| {
+        let Ok((wallet, public_key, secret_key)) = credentials() else {
             error_message.set(Some("Chairperson credentials are missing.".to_string()));
             return;
         };
@@ -91,12 +79,14 @@ pub fn ChairpersonPage(
         error_message.set(None);
 
         spawn_local(async move {
-            match flush_batches(wallet, public_key).await {
+            match close_election(wallet, public_key, secret_key).await {
                 Ok(response) => {
+                    let closed = response.results.iter().filter(|r| r.success).count();
+
                     success_message.set(Some(format!(
-                        "{} batch(es) submitted with {} pending vote(s).",
-                        response.total_batches, response.total_votes
+                        "Election closed across {closed} decade ballot(s)."
                     )));
+
                     current_step.set(3);
                 }
                 Err(error) => error_message.set(Some(error)),
@@ -106,17 +96,9 @@ pub fn ChairpersonPage(
         });
     };
 
-    let open_tie_resolution = move |_| {
-        success_message.set(None);
-        error_message.set(None);
-
-        // Finalization becomes the next step when the chairperson returns.
-        current_step.set(4);
-        page.set("tie-resolution");
-    };
-
-    let finalize_global_election = move |_| {
-        let Ok((wallet, public_key)) = credentials() else {
+    // Submits all pending batches.
+    let submit_all_batches = move |_: MouseEvent| {
+        let Ok((wallet, public_key, secret_key)) = credentials() else {
             error_message.set(Some("Chairperson credentials are missing.".to_string()));
             return;
         };
@@ -126,7 +108,61 @@ pub fn ChairpersonPage(
         error_message.set(None);
 
         spawn_local(async move {
-            match finalize_election(wallet, public_key).await {
+            match flush_batches(wallet, public_key, secret_key).await {
+                Ok(response) => {
+                    success_message.set(Some(format!(
+                        "{} batch(es) submitted with {} pending vote(s).",
+                        response.total_batches, response.total_votes
+                    )));
+
+                    // Next step is decrypting results / detecting ties.
+                    current_step.set(4);
+                }
+                Err(error) => error_message.set(Some(error)),
+            }
+
+            submitting.set(false);
+        });
+    };
+
+    // Opens the tie resolution page.
+    let open_tie_resolution = move |_: MouseEvent| {
+        if detected_ties.get() == 0 {
+            error_message.set(Some(
+                "No unresolved ties were detected. Decrypt results first.".to_string(),
+            ));
+            return;
+        }
+
+        leptos::logging::log!("CLICKED RESOLVE TIES");
+
+        success_message.set(None);
+        error_message.set(None);
+
+        // When the user comes back from the tie page, the next action is finalizing again.
+        current_step.set(6);
+        page.set("tie-resolution");
+    };
+
+    // Finalizes the election.
+    //
+    // This function is used twice:
+    // 1. Step 04: decrypt results and detect ties.
+    // 2. Step 06: after tie resolution, set the final winners on-chain.
+    let finalize_global_election = move |_: MouseEvent| {
+        let Ok((wallet, public_key, secret_key)) = credentials() else {
+            error_message.set(Some("Chairperson credentials are missing.".to_string()));
+            return;
+        };
+
+        let step_before_finalize = current_step.get();
+
+        submitting.set(true);
+        success_message.set(None);
+        error_message.set(None);
+
+        spawn_local(async move {
+            match finalize_election(wallet, public_key, secret_key).await {
                 Ok(response) => {
                     let finalized = response
                         .results
@@ -142,14 +178,54 @@ pub fn ChairpersonPage(
                         .filter(|result| result.status == "Tie")
                         .count();
 
-                    if ties == 0 {
-                        current_step.set(5);
-                    }
+                    let no_votes = response
+                        .results
+                        .iter()
+                        .filter(|result| result.status == "NoVotes")
+                        .count();
 
-                    success_message.set(Some(format!(
-                        "{finalized} decade ballot(s) finalized. \
-                         {ties} tie(s) require resolution."
-                    )));
+                    let errors = response
+                        .results
+                        .iter()
+                        .filter(|result| {
+                            !result.success && result.status != "Tie" && result.status != "NoVotes"
+                        })
+                        .count();
+
+                    detected_ties.set(ties);
+
+                    if ties > 0 {
+                        current_step.set(5);
+
+                        success_message.set(Some(format!(
+                            "{finalized} decade ballot(s) finalized. \
+                             {ties} tie(s) require resolution. \
+                             {no_votes} decade ballot(s) had no votes."
+                        )));
+                    } else if errors == 0 {
+                        current_step.set(7);
+
+                        if step_before_finalize == 6 {
+                            success_message.set(Some(format!(
+                                "Resolved winners finalized. \
+                                 {finalized} decade ballot(s) finalized. \
+                                 {no_votes} decade ballot(s) had no votes."
+                            )));
+                        } else {
+                            success_message.set(Some(format!(
+                                "{finalized} decade ballot(s) finalized. \
+                                 No ties detected. \
+                                 {no_votes} decade ballot(s) had no votes."
+                            )));
+                        }
+                    } else {
+                        success_message.set(Some(format!(
+                            "{finalized} decade ballot(s) finalized. \
+                             {ties} tie(s) require resolution. \
+                             {no_votes} decade ballot(s) had no votes. \
+                             {errors} error(s)."
+                        )));
+                    }
                 }
                 Err(error) => error_message.set(Some(error)),
             }
@@ -158,6 +234,7 @@ pub fn ChairpersonPage(
         });
     };
 
+    // Returns the CSS class for each step.
     let step_class = move |step: u8| {
         if current_step.get() == step {
             "chairperson-step active"
@@ -173,123 +250,50 @@ pub fn ChairpersonPage(
             <div class="chairperson-container">
                 <header class="chairperson-header">
                     <p class="chairperson-kicker">"Chairperson"</p>
-
-                    <h1>
-                        "Election control"
-                    </h1>
-
+                    <h1>"Election control"</h1>
                 </header>
 
-                <section class="election-progress">
-                    {move || {
-                        if loading_completion.get() {
-                            view! {
-                                <p class="election-progress-loading">
-                                    "Checking voter completion..."
-                                </p>
-                            }
-                            .into_any()
-                        } else if let Some(status) = completion.get() {
-                            let percentage = if status.eligible_voters == 0 {
-                                0
-                            } else {
-                                status.completed_voters * 100 / status.eligible_voters
-                            };
-
-                            view! {
-                                <div>
-                                    <div class="election-progress-heading">
-                                        <span>"Voting status"</span>
-                                        <strong>
-                                            {format!(
-                                                "{} / {}",
-                                                status.completed_voters,
-                                                status.eligible_voters
-                                            )}
-                                        </strong>
-                                    </div>
-
-                                    <div class="election-progress-track">
-                                        <div
-                                            class="election-progress-fill"
-                                            style=format!("width: {percentage}%")
-                                        ></div>
-                                    </div>
-
-                                    {if status.complete {
-                                        view! {
-                                            <p class="election-ready">
-                                                "All voters completed every decade."
-                                            </p>
-                                        }
-                                        .into_any()
-                                    } else {
-                                        view! {
-                                            <details class="incomplete-voters">
-                                                <summary>
-                                                    {format!(
-                                                        "{} voter(s) still incomplete",
-                                                        status.incomplete_voters.len()
-                                                    )}
-                                                </summary>
-
-                                                <div class="incomplete-voters-list">
-                                                    {status
-                                                        .incomplete_voters
-                                                        .into_iter()
-                                                        .map(|voter| {
-                                                            view! {
-                                                                <div class="incomplete-voter-row">
-                                                                    <strong>{voter.wallet_id}</strong>
-                                                                    <span>
-                                                                        {voter
-                                                                            .missing_decade_names
-                                                                            .join(", ")}
-                                                                    </span>
-                                                                </div>
-                                                            }
-                                                        })
-                                                        .collect_view()}
-                                                </div>
-                                            </details>
-                                        }
-                                        .into_any()
-                                    }}
-                                </div>
-                            }
-                            .into_any()
-                        } else {
-                            view! {
-                                <p class="election-progress-loading">
-                                    "Completion status unavailable."
-                                </p>
-                            }
-                            .into_any()
+                <div class="wallet-login-fields chairperson-actions">
+                    <input
+                        type="password"
+                        placeholder="Chairperson private key"
+                        prop:value=move || chairperson_secret_key.get()
+                        on:input=move |event| {
+                            chairperson_secret_key.set(event_target_value(&event));
                         }
-                    }}
-                </section>
+                    />
+                </div>
 
                 <div class="chairperson-steps">
                     <article class=move || step_class(1)>
                         <div class="chairperson-step-number">"01"</div>
-
                         <div class="chairperson-step-content">
-
                             <button
                                 class="chairperson-step-button"
-                                disabled=move || {
-                                    submitting.get()
-                                        || current_step.get() != 1
-                                        || loading_completion.get()
-                                        || completion
-                                            .get()
-                                            .map(|status| !status.complete)
-                                            .unwrap_or(true)
-                                }
-                                on:click=close_global_election
+                                disabled=move || submitting.get() || current_step.get() != 1
+                                on:click=create_global_ballots
                             >
                                 {move || {
                                     if submitting.get() && current_step.get() == 1 {
+                                        "Creating..."
+                                    } else {
+                                        "Create ballots"
+                                    }
+                                }}
+                            </button>
+                        </div>
+                    </article>
+
+                    <article class=move || step_class(2)>
+                        <div class="chairperson-step-number">"02"</div>
+                        <div class="chairperson-step-content">
+                            <button
+                                class="chairperson-step-button"
+                                disabled=move || submitting.get() || current_step.get() != 2
+                                on:click=close_global_election
+                            >
+                                {move || {
+                                    if submitting.get() && current_step.get() == 2 {
                                         "Closing..."
                                     } else {
                                         "Close election"
@@ -299,18 +303,16 @@ pub fn ChairpersonPage(
                         </div>
                     </article>
 
-                    <article class=move || step_class(2)>
-                        <div class="chairperson-step-number">"02"</div>
-
+                    <article class=move || step_class(3)>
+                        <div class="chairperson-step-number">"03"</div>
                         <div class="chairperson-step-content">
-
                             <button
                                 class="chairperson-step-button"
-                                disabled=move || submitting.get() || current_step.get() != 2
+                                disabled=move || submitting.get() || current_step.get() != 3
                                 on:click=submit_all_batches
                             >
                                 {move || {
-                                    if submitting.get() && current_step.get() == 2 {
+                                    if submitting.get() && current_step.get() == 3 {
                                         "Submitting..."
                                     } else {
                                         "Submit pending batches"
@@ -320,23 +322,8 @@ pub fn ChairpersonPage(
                         </div>
                     </article>
 
-                    <article class=move || step_class(3)>
-                        <div class="chairperson-step-number">"03"</div>
-
-                        <div class="chairperson-step-content">
-                            <button
-                                class="chairperson-step-button"
-                                disabled=move || submitting.get() || current_step.get() != 3
-                                on:click=open_tie_resolution
-                            >
-                                "Resolve tied votes"
-                            </button>
-                        </div>
-                    </article>
-
                     <article class=move || step_class(4)>
                         <div class="chairperson-step-number">"04"</div>
-
                         <div class="chairperson-step-content">
                             <button
                                 class="chairperson-step-button"
@@ -345,15 +332,72 @@ pub fn ChairpersonPage(
                             >
                                 {move || {
                                     if submitting.get() && current_step.get() == 4 {
+                                        "Decrypting..."
+                                    } else {
+                                        "Decrypt results / detect ties"
+                                    }
+                                }}
+                            </button>
+                        </div>
+                    </article>
+
+                    <article class=move || step_class(5)>
+                        <div class="chairperson-step-number">"05"</div>
+                        <div class="chairperson-step-content">
+                            <button
+                                class="chairperson-step-button"
+                                disabled=move || {
+                                    submitting.get()
+                                        || current_step.get() != 5
+                                        || detected_ties.get() == 0
+                                }
+                                on:click=open_tie_resolution
+                            >
+                                {move || {
+                                    let ties = detected_ties.get();
+
+                                    if ties > 0 {
+                                        format!("Resolve tied votes ({ties})")
+                                    } else {
+                                        "Resolve tied votes".to_string()
+                                    }
+                                }}
+                            </button>
+                        </div>
+                    </article>
+
+                    <article class=move || step_class(6)>
+                        <div class="chairperson-step-number">"06"</div>
+                        <div class="chairperson-step-content">
+                            <button
+                                class="chairperson-step-button"
+                                disabled=move || submitting.get() || current_step.get() != 6
+                                on:click=finalize_global_election
+                            >
+                                {move || {
+                                    if submitting.get() && current_step.get() == 6 {
                                         "Finalizing..."
                                     } else {
-                                        "Finalize election"
+                                        "Finalize resolved winners"
                                     }
                                 }}
                             </button>
                         </div>
                     </article>
                 </div>
+
+                {move || {
+                    if current_step.get() >= 7 {
+                        view! {
+                            <p class="vote-success">
+                                "Election workflow completed."
+                            </p>
+                        }
+                        .into_any()
+                    } else {
+                        view! { <div></div> }.into_any()
+                    }
+                }}
 
                 {move || {
                     success_message.get().map(|message| {

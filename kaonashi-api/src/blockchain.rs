@@ -1,41 +1,24 @@
-use crate::models::BlockchainBallotResponse;
-use crate::models::FinalResultsResponse;
-use solana_sdk::hash::Hash;
-use solana_sdk::signature::{Keypair, Signer};
-use solana_zk_sdk::encryption::elgamal::ElGamalSecretKey;
 use std::str::FromStr;
-use zk_client::solana_client::set_final_winner;
 
-use zk_client::crypto::{decrypt_tally, winner_index};
-
-use crate::movies::movies_decades;
+use solana_sdk::hash::Hash;
 use solana_sdk::pubkey::Pubkey;
-use solana_zk_sdk::encryption::elgamal::ElGamalPubkey;
-use zk_client::{
-    crypto::encrypt_values,
-    solana_client::{
-        close_election, connect_localnet, fetch_ballot, initialize_ballot, submit_rollup_batch,
-    },
+use solana_sdk::signature::{Keypair, Signer};
+use solana_zk_sdk::encryption::elgamal::{ElGamalPubkey, ElGamalSecretKey};
+
+use crate::models::{BlockchainBallotResponse, FinalResultsResponse};
+use crate::movies::movies_decades;
+
+use zk_client::crypto::{decrypt_tally, encrypt_values};
+
+use zk_client::solana_client::{
+    close_election, connect_localnet, fetch_ballot, initialize_ballot, set_final_winner,
+    submit_rollup_batch,
 };
 
 // ---------------------------------------------------
 // Submit rollup batch to Solana
 // ---------------------------------------------------
-//
-// Esta função é chamada pela API depois de criar um batch off-chain.
-//
-// Nesta fase, a API já fez:
-// 1. verificação da assinatura;
-// 2. verificação das ZK proofs;
-// 3. criação do batch;
-// 4. criação da Merkle root;
-// 5. soma homomórfica dos votos cifrados.
-//
-// A blockchain NÃO recebe os votos individuais.
-// Recebe apenas o resumo do batch:
-// - merkle_root;
-// - encrypted_batch_tally;
-// - batch_size.
+
 pub fn submit_rollup_batch_to_blockchain(
     ballot: Pubkey,
     decade_id: u8,
@@ -67,16 +50,8 @@ pub fn submit_rollup_batch_to_blockchain(
 }
 
 // ---------------------------------------------------
-// Create ballots on-chain
+// Create all ballots on-chain
 // ---------------------------------------------------
-//
-// Esta função cria ballots novos na blockchain.
-// Cria 1 ballot por década, de 0 a 5.
-//
-// Nota:
-// Depois de correr isto, é preciso copiar os endereços gerados
-// para o ficheiro ballots.rs, para que a API saiba que ballot
-// corresponde a cada década.
 
 pub fn create_all_ballots_on_chain(
     elgamal_public_keys_by_decade: Vec<[u8; 32]>,
@@ -100,7 +75,6 @@ pub fn create_all_ballots_on_chain(
         let ballot = Keypair::new();
 
         let initial_values = vec![0_u64; movies.len()];
-
         let initial_encrypted_tally = encrypt_values(&initial_values, &elgamal_public_key);
 
         initialize_ballot(
@@ -124,6 +98,45 @@ pub fn create_all_ballots_on_chain(
 
     Ok(created_ballots)
 }
+
+// ---------------------------------------------------
+// Close one ballot on-chain
+// ---------------------------------------------------
+
+pub fn close_ballot_on_chain(ballot: Pubkey, decade_id: u8) -> Result<(), String> {
+    let program = connect_localnet()
+        .map_err(|error| format!("Failed to connect to Solana localnet: {}", error))?;
+
+    match close_election(&program, ballot) {
+        Ok(_) => {
+            println!("Election closed on-chain for decade {}", decade_id);
+            Ok(())
+        }
+
+        Err(error) => {
+            let error_text = error.to_string();
+
+            if error_text.contains("ElectionNotOpen") || error_text.contains("Election is not open")
+            {
+                println!(
+                    "Election for decade {} was already closed on-chain",
+                    decade_id
+                );
+
+                Ok(())
+            } else {
+                Err(format!(
+                    "Failed to close election on-chain for decade {}: {}",
+                    decade_id, error
+                ))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------
+// Fetch ballot state from Solana
+// ---------------------------------------------------
 
 pub fn get_ballot_state_from_blockchain(
     ballot: Pubkey,
@@ -151,10 +164,15 @@ pub fn get_ballot_state_from_blockchain(
     })
 }
 
+// ---------------------------------------------------
+// Finalize election from encrypted tally
+// ---------------------------------------------------
+
 pub fn finalize_election_from_blockchain(
     ballot: Pubkey,
     decade_id: u8,
     secret_key: ElGamalSecretKey,
+    resolved_winner_index: Option<usize>,
 ) -> Result<FinalResultsResponse, String> {
     let movies =
         movies_decades(decade_id).ok_or_else(|| format!("Invalid decade {}", decade_id))?;
@@ -168,41 +186,103 @@ pub fn finalize_election_from_blockchain(
     let results = decrypt_tally(&ballot_account.encrypted_tally, &secret_key)
         .map_err(|error| format!("Failed to decrypt tally: {}", error))?;
 
-    let winner_index =
-        winner_index(&results).map_err(|error| format!("Failed to determine winner: {}", error))?;
+    let decrypted_total_votes: u32 = results.iter().sum();
 
-    let winner_movie = movies
-        .get(winner_index)
-        .ok_or_else(|| "Winner index does not match movie list".to_string())?
-        .clone();
-    match close_election(&program, ballot) {
-        Ok(_) => {
-            println!("Election closed on-chain");
-        }
+    if decrypted_total_votes == 0 {
+        println!(
+            "Election has no votes for decade {}. Results: {:?}",
+            decade_id, results
+        );
 
-        Err(error) => {
-            let error_text = error.to_string();
-
-            if error_text.contains("ElectionNotOpen") || error_text.contains("Election is not open")
-            {
-                println!("Election was already closed, continuing finalize");
-            } else {
-                return Err(format!("Failed to close election on-chain: {}", error));
-            }
-        }
+        return Ok(FinalResultsResponse {
+            success: false,
+            decade_id,
+            results,
+            winner_index: 0,
+            winner_movie: String::new(),
+            total_votes: ballot_account.total_votes,
+            batch_count: ballot_account.batch_count,
+            status: "NoVotes".to_string(),
+        });
     }
 
-    set_final_winner(&program, ballot, winner_index as u8)
+    let max_votes = results.iter().copied().max().unwrap_or(0);
+
+    let tie_indices = results
+        .iter()
+        .enumerate()
+        .filter_map(|(index, votes)| {
+            if *votes == max_votes {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<usize>>();
+
+    let final_winner_index = if tie_indices.len() > 1 {
+        match resolved_winner_index {
+            Some(index) if tie_indices.contains(&index) => index,
+
+            Some(index) => {
+                return Ok(FinalResultsResponse {
+                    success: false,
+                    decade_id,
+                    results,
+                    winner_index: index,
+                    winner_movie: String::new(),
+                    total_votes: ballot_account.total_votes,
+                    batch_count: ballot_account.batch_count,
+                    status: format!(
+                        "Resolved winner index {} is not part of the tie {:?}",
+                        index, tie_indices
+                    ),
+                });
+            }
+
+            None => {
+                println!(
+                    "Tie detected for decade {}. Tied indices: {:?}. Results: {:?}",
+                    decade_id, tie_indices, results
+                );
+
+                return Ok(FinalResultsResponse {
+                    success: false,
+                    decade_id,
+                    results,
+                    winner_index: 0,
+                    winner_movie: String::new(),
+                    total_votes: ballot_account.total_votes,
+                    batch_count: ballot_account.batch_count,
+                    status: "Tie".to_string(),
+                });
+            }
+        }
+    } else {
+        tie_indices[0]
+    };
+
+    let winner_movie = movies
+        .get(final_winner_index)
+        .ok_or_else(|| "Winner index does not match movie list".to_string())?
+        .clone();
+
+    set_final_winner(&program, ballot, final_winner_index as u8)
         .map_err(|error| format!("Failed to set final winner on-chain: {}", error))?;
+
+    println!(
+        "Election finalized for decade {}. Winner: {}. Results: {:?}",
+        decade_id, winner_movie, results
+    );
 
     Ok(FinalResultsResponse {
         success: true,
         decade_id,
         results,
-        winner_index,
+        winner_index: final_winner_index,
         winner_movie,
         total_votes: ballot_account.total_votes,
         batch_count: ballot_account.batch_count,
-        status: "Election finalized successfully".to_string(),
+        status: "Finalized".to_string(),
     })
 }

@@ -1387,6 +1387,7 @@ dependencies = [
  "solana-sdk",
  "solana-zk-sdk",
  "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
