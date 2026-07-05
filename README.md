@@ -148,5 +148,5 @@ This builds and serves the frontend, opening it automatically in your default br
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- CONTRIBUTING -->
+
 
