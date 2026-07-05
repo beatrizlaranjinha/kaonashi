@@ -6,6 +6,8 @@
 
 <!-- TABLE OF CONTENTS -->
 
+<!-- TABLE OF CONTENTS -->
+
 <details>
   <summary>Table of Contents</summary>
   <ol>
@@ -30,7 +32,9 @@
         <li><a href="#4-start-the-frontend">4. Start the Frontend</a></li>
       </ul>
     </li>
-    <li><a href="#contributing">Contributing</a></li>
+    <li>
+      <a href="#references">References</a>
+    </li>
   </ol>
 </details>
 
@@ -145,6 +149,22 @@ trunk serve --open
 ```
 
 This builds and serves the frontend, opening it automatically in your default browser. From there, users can connect, choose a decade ballot, vote for a movie and submit an encrypted vote to the system.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+## References
+
+* Anchor Documentation. “Program Structure.” 2026. Accessed: 2026-04-02. [Online]. Available: https://www.anchor-lang.com/docs/basics/program-structure
+
+* Tokio Project. “Tokio: An asynchronous Rust runtime.” 2026. Accessed: 2026-04-25. [Online]. Available: https://tokio.rs/
+
+* Rust Project Developers. “The Rust Programming Language.” 2026. Accessed: 2026-03-21. [Online]. Available: https://www.rust-lang.org/
+
+* Solana ZK SDK Documentation. “Grouped ElGamal Encryption.” 2026. Accessed: 2026-04-25. [Online]. Available: https://docs.rs/solana-zk-sdk/latest/solana_zk_sdk/encryption/grouped_elgamal/index.html
+
+* Solana Documentation. “Official Rust Clients.” 2026. Accessed: 2026-04-25. [Online]. Available: https://solana.com/docs/clients/official/rust
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
