@@ -1,8 +1,18 @@
 <a id="readme-top"></a>
 
 <!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <a href="https://github.com/beatrizlaranjinha/kaonashi">
+    <img src="./assets/logooo.png" alt="Logo" width="200" height="200">
+  </a>
 
-<h3 align="center">Kaonashi</h3>
+  <h3 align="center">Kaonashi</h3>
+
+
+
+
+</div>
 
 <!-- TABLE OF CONTENTS -->
 
