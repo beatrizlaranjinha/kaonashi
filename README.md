@@ -80,8 +80,8 @@ These are some of the tools, frameworks and cryptographic mechanisms used to bui
 * `Zero-Knowledge Proofs`: used to prove that an encrypted vote is well-formed without revealing the selected option.
 * `Homomorphic Tallying`: used to add encrypted votes directly into the encrypted tally.
 * `Trunk`: used to build and serve the Rust/WASM frontend.
-* `Rust/WASM Frontend`: used to create the voting interface and prepare encrypted vote submissions.
-* `Rust API`: used as the coordination layer between the frontend and the Solana program.
+* `Leptos/WASM Frontend`: used to create the voting interface and prepare encrypted vote submissions.
+* `Axum API`: used as the coordination layer between the frontend and the Solana program.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
