@@ -4,7 +4,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/beatrizlaranjinha/kaonashi">
-    <img src="./assets/logooo.png" alt="Logo" width="200" height="200">
+    <img src="./assets/logooo.png" alt="Logo" width="170" height="170">
   </a>
 
   <h3 align="center">Kaonashi</h3>
