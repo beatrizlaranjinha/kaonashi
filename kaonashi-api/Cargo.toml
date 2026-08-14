@@ -19,6 +19,11 @@ hex = "0.4"
 
 
 
+ark-bn254 = "0.5"
+ark-groth16 = "0.5"
+ark-relations = "0.5"
+ark-std = "0.5"
+ark-ff = "0.5"
 
 
 anchor-client = "0.32.1"

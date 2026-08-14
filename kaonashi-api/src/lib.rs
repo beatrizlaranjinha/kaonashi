@@ -9,3 +9,4 @@ pub mod movies;
 pub mod zk_verify;
 pub use ballots::ballot_for_decade;
 pub mod batches;
+pub mod groth16;

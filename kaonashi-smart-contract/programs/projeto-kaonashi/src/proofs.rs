@@ -215,7 +215,6 @@ pub fn verify_vote_proof(
 // ============================================================================
 // VoteSumProof verification
 // ============================================================================
-
 pub fn verify_vote_sum_proof(
     public_key: &[u8; 32],
     encrypted_vote: &[[u8; 64]],
@@ -228,7 +227,6 @@ pub fn verify_vote_sum_proof(
     let (g_base, h_base, public_key_point) = derive_bases(public_key)?;
 
     let mut aggregate_commitment: Option<RistrettoPoint> = None;
-
     let mut aggregate_handle: Option<RistrettoPoint> = None;
 
     for ciphertext in encrypted_vote {
@@ -252,42 +250,29 @@ pub fn verify_vote_sum_proof(
         aggregate_handle.ok_or_else(|| "Missing aggregate handle".to_string())?;
 
     let a = point_from_array(&proof.a, "VoteSumProof a")?;
-
     let b = point_from_array(&proof.b, "VoteSumProof b")?;
-
     let c = scalar_from_array(&proof.c, "VoteSumProof c")?;
-
     let s = scalar_from_array(&proof.s, "VoteSumProof s")?;
 
-    let expected_challenge =
-        challenge_sum_proof(public_key, &aggregate_commitment, &aggregate_handle, &a, &b);
-
-    if c != expected_challenge {
+    if c != challenge_sum_proof(public_key, &aggregate_commitment, &aggregate_handle, &a, &b) {
         return Err("VoteSumProof challenge check failed".to_string());
     }
 
-    // A soma dos ciphertexts deve cifrar exatamente 1:
+    // The sum of all ciphertexts must encrypt exactly 1:
     //
     // aggregate_commitment = G + r_total H
-    // aggregate_handle = r_total P
+    // aggregate_handle     = r_total P
 
-    let commitment_minus_one = aggregate_commitment - g_base;
-
-    let check_commitment = h_base * s == a + commitment_minus_one * c;
-
-    let check_handle = public_key_point * s == b + aggregate_handle * c;
-
-    if !check_commitment {
+    if h_base * s != a + (aggregate_commitment - g_base) * c {
         return Err("VoteSumProof commitment equation failed".to_string());
     }
 
-    if !check_handle {
+    if public_key_point * s != b + aggregate_handle * c {
         return Err("VoteSumProof handle equation failed".to_string());
     }
 
     Ok(())
 }
-
 // ============================================================================
 // Full encrypted vote verification
 // ============================================================================

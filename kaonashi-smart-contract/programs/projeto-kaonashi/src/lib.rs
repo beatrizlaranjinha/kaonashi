@@ -9,7 +9,7 @@ use crypto::{encrypted_tally_after_vote, validate_ciphertexts, validate_public_k
 use election::ELECTION_OPEN;
 use proofs::verify_encrypted_vote_proofs;
 
-declare_id!("4ybufDXMBSQpQ6kxGqEud9afLC9ayoN925Fk6SkAJxx7");
+declare_id!("9cmm5vjNbHThzqg8fjtsHUVY133m73mMyCkGnFq4dFk");
 
 pub const MAX_PROPOSALS: usize = 8;
 pub const MAX_PROPOSAL_NAME: usize = 64;

@@ -1,4 +1,5 @@
 use crate::blockchain::submit_rollup_batch_to_blockchain;
+use crate::groth16::generate_batch_proof;
 use crate::keeping_votes::KeepingVotes;
 use crate::merkle::{hash_leaf, merkle_proof, merkle_root};
 use crate::models::{
@@ -38,6 +39,23 @@ pub fn create_batch_for_decade(
     let merkle_root = merkle_root(&leaves)?;
     let tree_build_time = tree_start.elapsed();
     println!("Merkle tree build: {:?}", tree_build_time);
+
+    // ---------------------------------------------------------
+    // Groth16 batch proof
+    // ---------------------------------------------------------
+
+    let zk_result = generate_batch_proof(&votes)?;
+
+    println!("Groth16 batch proof generated successfully");
+
+    println!("  Setup: {:?}", zk_result.setup_time);
+
+    println!("  Proof generation: {:?}", zk_result.proof_generation_time);
+
+    println!(
+        "  Local verification: {:?}",
+        zk_result.local_verification_time
+    );
 
     let batch_index = {
         let batches = keeping_votes.encrypted_vote_batches.lock().unwrap();
