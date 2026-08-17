@@ -1957,6 +1957,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "groth16-solana"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a6d1ffb18dbf5cfc60b11bd7da88474c672870247c1e5b498619bcb6ba3d8f5"
+dependencies = [
+ "ark-bn254 0.5.0",
+ "ark-ec 0.5.0",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "num-bigint",
+ "solana-bn254",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2511,12 +2526,13 @@ dependencies = [
 name = "kaonashi-api"
 version = "0.1.0"
 dependencies = [
- "anchor-client",
  "anyhow",
  "ark-bn254 0.5.0",
+ "ark-ec 0.5.0",
  "ark-ff 0.5.0",
  "ark-groth16",
  "ark-relations",
+ "ark-serialize 0.5.0",
  "ark-std 0.5.0",
  "axum",
  "bs58",
@@ -3076,6 +3092,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "curve25519-dalek 4.1.3",
+ "groth16-solana",
  "sha2 0.10.9",
  "solana-curve25519 4.0.1",
 ]

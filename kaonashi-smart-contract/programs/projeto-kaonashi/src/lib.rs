@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 
 pub mod crypto;
 pub mod election;
+pub mod groth16_verifying_key;
 pub mod proofs;
 pub mod rollups;
 
@@ -9,7 +10,7 @@ use crypto::{encrypted_tally_after_vote, validate_ciphertexts, validate_public_k
 use election::ELECTION_OPEN;
 use proofs::verify_encrypted_vote_proofs;
 
-declare_id!("9cmm5vjNbHThzqg8fjtsHUVY133m73mMyCkGnFq4dFk");
+declare_id!("GmYQgLM5HqrxnVYYsBSUuqXKDBdVV24PsDvLmL5LcGNg");
 
 pub const MAX_PROPOSALS: usize = 8;
 pub const MAX_PROPOSAL_NAME: usize = 64;
@@ -98,10 +99,18 @@ pub mod projeto_kaonashi {
         new_merkle_root: [u8; 32],
         encrypted_batch_tally: Vec<[u8; 64]>,
         batch_size: u64,
+        proof: [u8; 256],
+        public_inputs: [[u8; 32]; 2],
     ) -> Result<()> {
-        rollups::submit_rollup_batch(ctx, new_merkle_root, encrypted_batch_tally, batch_size)
+        rollups::submit_rollup_batch(
+            ctx,
+            new_merkle_root,
+            encrypted_batch_tally,
+            batch_size,
+            proof,
+            public_inputs,
+        )
     }
-
     pub fn close_election(ctx: Context<ManageElection>) -> Result<()> {
         election::close(&mut ctx.accounts.ballot)
     }
@@ -404,4 +413,10 @@ pub enum ErrorCode {
 
     #[msg("Final winner has already been set")]
     WinnerAlreadySet,
+
+    #[msg("Invalid Groth16 proof")]
+    InvalidGroth16Proof,
+
+    #[msg("Invalid Groth16 public inputs")]
+    InvalidGroth16PublicInputs,
 }

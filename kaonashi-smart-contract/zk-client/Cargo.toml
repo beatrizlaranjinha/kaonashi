@@ -19,7 +19,3 @@ projeto_kaonashi = { path = "../programs/projeto-kaonashi" }
 hex = "0.4.3"
 bs58 = "0.5.1"
 ed25519-dalek = "2.2.0"
-
-[[bin]]
-name = "generate-test-wallets"
-path = "src/generate_test_wallets.rs"

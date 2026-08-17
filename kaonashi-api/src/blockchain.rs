@@ -18,12 +18,16 @@ use zk_client::solana_client::{
 // Rollup batches
 
 // Sends one encrypted batch tally to the Solana smart contract.
+// Sends one encrypted batch tally and its Groth16 proof
+// to the Solana smart contract.
 pub fn submit_rollup_batch_to_blockchain(
     ballot: Pubkey,
     decade_id: u8,
     merkle_root: &str,
     encrypted_batch_tally: Vec<[u8; 64]>,
     batch_size: usize,
+    proof: [u8; 256],
+    public_inputs: [[u8; 32]; 2],
 ) -> Result<(), String> {
     let program = connect_localnet()
         .map_err(|error| format!("Failed to connect to Solana localnet: {}", error))?;
@@ -37,11 +41,14 @@ pub fn submit_rollup_batch_to_blockchain(
         merkle_root_hash.to_bytes(),
         encrypted_batch_tally,
         batch_size as u64,
+        proof,
+        public_inputs,
     )
     .map_err(|error| format!("Failed to submit rollup batch: {}", error))?;
 
     println!(
-        "Submitted rollup batch on-chain for decade {}. Ballot: {}. Batch size: {}",
+        "Submitted Groth16-verified rollup batch on-chain for decade {}. \
+         Ballot: {}. Batch size: {}",
         decade_id, ballot, batch_size
     );
 

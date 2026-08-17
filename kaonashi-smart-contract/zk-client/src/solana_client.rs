@@ -8,34 +8,48 @@ use anchor_client::{
     },
     Client, Cluster, Program,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
-pub const PROGRAM_ID: &str = "9cmm5vjNbHThzqg8fjtsHUVY133m73mMyCkGnFq4dFk";
+pub const PROGRAM_ID: &str = "GmYQgLM5HqrxnVYYsBSUuqXKDBdVV24PsDvLmL5LcGNg";
 
 pub type KaonashiProgram = Program<Rc<Keypair>>;
 
+// ============================================================================
+// Connection
+// ============================================================================
+
+/// Connects to the Kaonashi program running on Solana localnet.
+///
+/// Uses the default Solana keypair:
+///
+/// ~/.config/solana/id.json
 pub fn connect_localnet() -> Result<KaonashiProgram> {
     let payer_path = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Não foi possível encontrar o home directory"))?
+        .ok_or_else(|| anyhow!("Could not find home directory"))?
         .join(".config/solana/id.json");
 
     let payer = read_keypair_file(&payer_path)
-        .map_err(|error| anyhow::anyhow!("Failed to read keypair: {}", error))?;
+        .map_err(|error| anyhow!("Failed to read Solana keypair: {error}"))?;
 
     let client = Client::new_with_options(
         Cluster::Localnet,
         Rc::new(payer),
-        CommitmentConfig::processed(),
+        CommitmentConfig::confirmed(),
     );
 
-    let program_id = Pubkey::from_str(PROGRAM_ID)
-        .map_err(|error| anyhow::anyhow!("Invalid Program ID: {}", error))?;
+    let program_id =
+        Pubkey::from_str(PROGRAM_ID).map_err(|error| anyhow!("Invalid Program ID: {error}"))?;
 
     client
         .program(program_id)
-        .map_err(|error| anyhow::anyhow!("Failed to connect to program: {}", error))
+        .map_err(|error| anyhow!("Failed to connect to Kaonashi program: {error}"))
 }
 
+// ============================================================================
+// Initialize ballot
+// ============================================================================
+
+/// Creates and initializes a new on-chain Ballot account.
 pub fn initialize_ballot(
     program: &KaonashiProgram,
     ballot: &Keypair,
@@ -57,11 +71,20 @@ pub fn initialize_ballot(
         })
         .signer(ballot)
         .send()
-        .map_err(|error| anyhow::anyhow!("Failed to initialize ballot: {}", error))?;
+        .map_err(|error| anyhow!("Failed to initialize ballot: {error}"))?;
 
     Ok(())
 }
 
+// ============================================================================
+// Register voter
+// ============================================================================
+
+/// Registers a voter for a ballot.
+///
+/// The VoterRecord PDA is derived from:
+///
+/// ["voter", ballot, voter]
 pub fn register_voter(program: &KaonashiProgram, ballot: Pubkey, voter: Pubkey) -> Result<Pubkey> {
     let (voter_record, _) =
         Pubkey::find_program_address(&[b"voter", ballot.as_ref(), voter.as_ref()], &program.id());
@@ -77,18 +100,40 @@ pub fn register_voter(program: &KaonashiProgram, ballot: Pubkey, voter: Pubkey) 
         })
         .args(projeto_kaonashi::instruction::RegisterVoter {})
         .send()
-        .map_err(|error| anyhow::anyhow!("Failed to register voter: {}", error))?;
+        .map_err(|error| anyhow!("Failed to register voter: {error}"))?;
 
     Ok(voter_record)
 }
 
+// ============================================================================
+// Submit rollup batch
+// ============================================================================
+
+/// Submits an off-chain rollup batch to the Kaonashi smart contract.
+///
+/// CURRENT VERSION:
+///
+/// The instruction sends:
+///
+/// - Merkle root
+/// - encrypted batch tally
+/// - batch size
+///
+/// Groth16 proof verification will be added to this instruction after
+/// the on-chain Groth16 verifier successfully builds for SBF.
 pub fn submit_rollup_batch(
     program: &KaonashiProgram,
     ballot: Pubkey,
     merkle_root: [u8; 32],
     encrypted_batch_tally: Vec<[u8; 64]>,
     batch_size: u64,
+    proof: [u8; 256],
+    public_inputs: [[u8; 32]; 2],
 ) -> Result<()> {
+    if batch_size == 0 {
+        return Err(anyhow::anyhow!("Cannot submit an empty rollup batch"));
+    }
+
     program
         .request()
         .accounts(projeto_kaonashi::accounts::SubmitRollupBatchAccounts {
@@ -99,33 +144,34 @@ pub fn submit_rollup_batch(
             new_merkle_root: merkle_root,
             encrypted_batch_tally,
             batch_size,
+            proof,
+            public_inputs,
         })
         .send()
-        .map_err(|error| anyhow::anyhow!("Failed to submit rollup batch: {}", error))?;
+        .map_err(|error| {
+            anyhow::anyhow!("Failed to submit Groth16-verified rollup batch: {}", error)
+        })?;
 
     Ok(())
 }
+// ============================================================================
+// Fetch ballot
+// ============================================================================
 
+/// Reads the current state of an on-chain Ballot account.
 pub fn fetch_ballot(program: &KaonashiProgram, ballot: Pubkey) -> Result<projeto_kaonashi::Ballot> {
     program
         .account::<projeto_kaonashi::Ballot>(ballot)
-        .map_err(|error| anyhow::anyhow!("Failed to fetch ballot account: {}", error))
+        .map_err(|error| anyhow!("Failed to fetch ballot account: {error}"))
 }
 
-pub fn set_final_winner(program: &KaonashiProgram, ballot: Pubkey, winner_index: u8) -> Result<()> {
-    program
-        .request()
-        .accounts(projeto_kaonashi::accounts::SetFinalWinner {
-            ballot,
-            chairperson: program.payer(),
-        })
-        .args(projeto_kaonashi::instruction::SetFinalWinner { winner_index })
-        .send()
-        .map_err(|error| anyhow::anyhow!("Failed to set final winner: {}", error))?;
+// ============================================================================
+// Close election
+// ============================================================================
 
-    Ok(())
-}
-
+/// Closes an election.
+///
+/// Only the ballot chairperson can execute this instruction.
 pub fn close_election(program: &KaonashiProgram, ballot: Pubkey) -> Result<()> {
     program
         .request()
@@ -135,7 +181,28 @@ pub fn close_election(program: &KaonashiProgram, ballot: Pubkey) -> Result<()> {
         })
         .args(projeto_kaonashi::instruction::CloseElection {})
         .send()
-        .map_err(|error| anyhow::anyhow!("Failed to close election: {}", error))?;
+        .map_err(|error| anyhow!("Failed to close election: {error}"))?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Set final winner
+// ============================================================================
+
+/// Sets the final winner after the election has been closed.
+///
+/// This is used after tally decryption / tie resolution.
+pub fn set_final_winner(program: &KaonashiProgram, ballot: Pubkey, winner_index: u8) -> Result<()> {
+    program
+        .request()
+        .accounts(projeto_kaonashi::accounts::SetFinalWinner {
+            ballot,
+            chairperson: program.payer(),
+        })
+        .args(projeto_kaonashi::instruction::SetFinalWinner { winner_index })
+        .send()
+        .map_err(|error| anyhow!("Failed to set final winner: {error}"))?;
 
     Ok(())
 }

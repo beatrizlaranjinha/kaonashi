@@ -6,17 +6,27 @@ use crate::models::{
     EncryptedVoteBatch, FlushBatchResponse, MerkleProofNodeResponse, PendingEncryptedVote,
     VoteReceipt,
 };
+
 use solana_sdk::hash::hashv;
 use solana_zk_sdk::encryption::elgamal::ElGamalCiphertext;
+
 use std::time::{Duration, Instant};
 
 pub const MAX_BATCH_SIZE: usize = 10;
 
-// Cria um batch para uma década, se houver votos pendentes.
+// ============================================================================
+// Create batch
+// ============================================================================
+
+// Creates a batch for one decade if there are pending encrypted votes.
 pub fn create_batch_for_decade(
     keeping_votes: &KeepingVotes,
     decade_id: u8,
 ) -> Result<Option<FlushBatchResponse>, String> {
+    // ------------------------------------------------------------------------
+    // Get pending votes
+    // ------------------------------------------------------------------------
+
     let mut pending_votes = keeping_votes.pending_encrypted_votes.lock().unwrap();
 
     if pending_votes[decade_id as usize].is_empty() {
@@ -31,24 +41,44 @@ pub fn create_batch_for_decade(
 
     drop(pending_votes);
 
+    // ------------------------------------------------------------------------
+    // Create Merkle leaves
+    // ------------------------------------------------------------------------
+
     let leaves = votes.iter().map(batch_vote_leaf).collect::<Vec<String>>();
+
+    // ------------------------------------------------------------------------
+    // Create encrypted homomorphic batch tally
+    // ------------------------------------------------------------------------
 
     let encrypted_batch_tally = create_encrypted_batch_tally(&votes)?;
 
+    // ------------------------------------------------------------------------
+    // Build Merkle tree
+    // ------------------------------------------------------------------------
+
     let tree_start = Instant::now();
+
     let merkle_root = merkle_root(&leaves)?;
+
     let tree_build_time = tree_start.elapsed();
+
     println!("Merkle tree build: {:?}", tree_build_time);
 
-    // ---------------------------------------------------------
+    // ========================================================================
     // Groth16 batch proof
-    // ---------------------------------------------------------
+    // ========================================================================
+
+    println!(
+        "Generating Groth16 proof for batch of {} votes...",
+        votes.len()
+    );
 
     let zk_result = generate_batch_proof(&votes)?;
 
     println!("Groth16 batch proof generated successfully");
 
-    println!("  Setup: {:?}", zk_result.setup_time);
+    println!("  Proving key load: {:?}", zk_result.proving_key_load_time);
 
     println!("  Proof generation: {:?}", zk_result.proof_generation_time);
 
@@ -57,8 +87,28 @@ pub fn create_batch_for_decade(
         zk_result.local_verification_time
     );
 
+    // These are the exact representations expected by the Solana instruction.
+    //
+    // proof:
+    //     -A = 64 bytes
+    //      B = 128 bytes
+    //      C = 64 bytes
+    //     total = 256 bytes
+    //
+    // public inputs:
+    //     [0] = batch commitment
+    //     [1] = batch size
+
+    let groth16_proof = zk_result.proof_bytes;
+    let groth16_public_inputs = zk_result.public_inputs_bytes;
+
+    // ========================================================================
+    // Create batch identifier
+    // ========================================================================
+
     let batch_index = {
         let batches = keeping_votes.encrypted_vote_batches.lock().unwrap();
+
         batches[decade_id as usize].len()
     };
 
@@ -75,12 +125,18 @@ pub fn create_batch_for_decade(
     ])
     .to_string();
 
+    // ========================================================================
+    // Generate Merkle inclusion proofs / receipts
+    // ========================================================================
+
     let mut receipts = Vec::new();
     let mut total_proof_time = Duration::ZERO;
 
     for (index, vote) in votes.iter().enumerate() {
         let start = Instant::now();
+
         let proof = merkle_proof(&leaves, index)?;
+
         total_proof_time += start.elapsed();
 
         receipts.push(VoteReceipt {
@@ -90,6 +146,7 @@ pub fn create_batch_for_decade(
             decade_id,
             leaf_index: index,
             merkle_root: merkle_root.clone(),
+
             merkle_proof: proof
                 .into_iter()
                 .map(|node| MerkleProofNodeResponse {
@@ -105,7 +162,12 @@ pub fn create_batch_for_decade(
         total_proof_time / receipts.len() as u32
     );
 
+    // ========================================================================
+    // Verify generated Merkle proofs locally
+    // ========================================================================
+
     let mut total_verification_time = Duration::ZERO;
+
     for receipt in &receipts {
         let proof = receipt
             .merkle_proof
@@ -115,16 +177,25 @@ pub fn create_batch_for_decade(
                 is_left: node.is_left,
             })
             .collect::<Vec<_>>();
+
         let start = Instant::now();
+
         let verified =
             crate::merkle::verify_merkle_proof(&receipt.leaf_hash, &proof, &receipt.merkle_root);
+
         total_verification_time += start.elapsed();
-        assert!(verified);
+
+        assert!(verified, "Generated Merkle proof failed local verification");
     }
+
     println!(
         "Average Merkle proof verification: {:?}",
         total_verification_time / receipts.len() as u32
     );
+
+    // ========================================================================
+    // Store batch off-chain
+    // ========================================================================
 
     let batch = EncryptedVoteBatch {
         batch_id: batch_id.clone(),
@@ -136,8 +207,14 @@ pub fn create_batch_for_decade(
     };
 
     let mut batches = keeping_votes.encrypted_vote_batches.lock().unwrap();
+
     batches[decade_id as usize].push(batch);
+
     drop(batches);
+
+    // ========================================================================
+    // Store vote receipts
+    // ========================================================================
 
     let mut stored_receipts = keeping_votes.vote_receipts_by_hash.lock().unwrap();
 
@@ -147,6 +224,10 @@ pub fn create_batch_for_decade(
 
     drop(stored_receipts);
 
+    // ========================================================================
+    // Find corresponding on-chain ballot
+    // ========================================================================
+
     let ballot_for_chain = {
         let ballots = keeping_votes.ballots_by_decade.lock().unwrap();
 
@@ -155,14 +236,31 @@ pub fn create_batch_for_decade(
             .and_then(|ballot| ballot.as_ref())
             .cloned()
             .ok_or_else(|| {
-                "No on-chain ballot found in API memory. Run /api/admin/create-ballots before submitting batches.".to_string()
+                "No on-chain ballot found in API memory. \
+                 Run /api/admin/create-ballots before submitting batches."
+                    .to_string()
             })?
     };
 
+    // ========================================================================
+    // Prepare values for Solana submission
+    // ========================================================================
+
     let decade_id_for_chain = decade_id;
+
     let merkle_root_for_chain = merkle_root.clone();
+
     let encrypted_tally_for_chain = encrypted_batch_tally.clone();
+
     let batch_size_for_chain = receipts.len();
+
+    let proof_for_chain = groth16_proof;
+
+    let public_inputs_for_chain = groth16_public_inputs;
+
+    // ========================================================================
+    // Submit Groth16-verified batch to Solana
+    // ========================================================================
 
     let on_chain_status = match std::thread::spawn(move || {
         submit_rollup_batch_to_blockchain(
@@ -171,6 +269,8 @@ pub fn create_batch_for_decade(
             &merkle_root_for_chain,
             encrypted_tally_for_chain,
             batch_size_for_chain,
+            proof_for_chain,
+            public_inputs_for_chain,
         )
     })
     .join()
@@ -178,37 +278,53 @@ pub fn create_batch_for_decade(
         Ok(Ok(_)) => "Encrypted vote batch created and submitted on-chain".to_string(),
 
         Ok(Err(error)) => format!(
-            "Encrypted vote batch created off-chain, but on-chain submission failed: {}",
+            "Encrypted vote batch created off-chain, \
+             but on-chain submission failed: {}",
             error
         ),
 
-        Err(_) => {
-            "Encrypted vote batch created off-chain, but on-chain submission panicked".to_string()
-        }
+        Err(_) => "Encrypted vote batch created off-chain, \
+             but on-chain submission panicked"
+            .to_string(),
     };
+
+    // ========================================================================
+    // API response
+    // ========================================================================
 
     Ok(Some(FlushBatchResponse {
         success: true,
         decade_id,
         batch_id,
         merkle_root,
+
         vote_count: receipts.len(),
+
         encrypted_batch_tally: encrypted_batch_tally
             .iter()
             .map(|ciphertext| ciphertext.to_vec())
             .collect(),
+
         receipts,
+
         status: on_chain_status,
     }))
 }
 
-// Cria a leaf Merkle de um voto cifrado.
+// ============================================================================
+// Merkle leaf
+// ============================================================================
+
+// Creates the Merkle leaf corresponding to one encrypted vote.
 pub fn batch_vote_leaf(vote: &PendingEncryptedVote) -> String {
     let mut data = Vec::new();
 
     data.extend_from_slice(vote.wallet_id.as_bytes());
+
     data.extend_from_slice(vote.public_key.as_bytes());
+
     data.push(vote.decade_id);
+
     data.extend_from_slice(vote.encrypted_vote_hash.as_bytes());
 
     for ciphertext in &vote.encrypted_vote {
@@ -217,6 +333,10 @@ pub fn batch_vote_leaf(vote: &PendingEncryptedVote) -> String {
 
     hash_leaf(&data)
 }
+
+// ============================================================================
+// Homomorphic encrypted batch tally
+// ============================================================================
 
 fn create_encrypted_batch_tally(votes: &[PendingEncryptedVote]) -> Result<Vec<[u8; 64]>, String> {
     if votes.is_empty() {
@@ -229,6 +349,10 @@ fn create_encrypted_batch_tally(votes: &[PendingEncryptedVote]) -> Result<Vec<[u
         return Err("Encrypted vote has no proposals".to_string());
     }
 
+    // ------------------------------------------------------------------------
+    // Start tally with the first encrypted vote
+    // ------------------------------------------------------------------------
+
     let mut tally = votes[0]
         .encrypted_vote
         .iter()
@@ -238,6 +362,10 @@ fn create_encrypted_batch_tally(votes: &[PendingEncryptedVote]) -> Result<Vec<[u
                 .ok_or_else(|| format!("Invalid ciphertext at vote 0, proposal {}", index))
         })
         .collect::<Result<Vec<ElGamalCiphertext>, String>>()?;
+
+    // ------------------------------------------------------------------------
+    // Homomorphically add the remaining encrypted votes
+    // ------------------------------------------------------------------------
 
     for (vote_index, vote) in votes.iter().enumerate().skip(1) {
         if vote.encrypted_vote.len() != proposal_count {
@@ -258,9 +386,14 @@ fn create_encrypted_batch_tally(votes: &[PendingEncryptedVote]) -> Result<Vec<[u
             })?;
 
             let current = tally[proposal_index];
+
             tally[proposal_index] = current + ciphertext;
         }
     }
+
+    // ------------------------------------------------------------------------
+    // Convert ciphertexts back to bytes
+    // ------------------------------------------------------------------------
 
     Ok(tally
         .into_iter()

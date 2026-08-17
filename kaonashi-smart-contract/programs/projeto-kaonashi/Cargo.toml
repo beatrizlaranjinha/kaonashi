@@ -20,3 +20,4 @@ anchor-lang = "0.32.1"
 solana-curve25519 = "4.0.0"
 curve25519-dalek = "4.1"
 sha2 = "0.10"
+groth16-solana = { version = "0.2.0", default-features = false }
