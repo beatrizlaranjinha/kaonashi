@@ -1,0 +1,232 @@
+warning: unexpected `cfg` condition value: `custom-heap`
+  --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:44:1
+   |
+44 | #[program]
+   | ^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `$crate::custom_heap_default` crate for guidance on how handle this unexpected cfg
+   = help: the macro `$crate::custom_heap_default` may come from an old version of the `solana_program_entrypoint` crate, try updating your dependency with `cargo update -p solana_program_entrypoint`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+   = note: this warning originates in the macro `$crate::custom_heap_default` which comes from the expansion of the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `solana`
+  --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:44:1
+   |
+44 | #[program]
+   | ^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `redox`, `rtems`, `solaris`, `solid_asp3`, `teeos`, `trusty`, `tvos`, and `uefi` and 9 more
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `$crate::custom_heap_default` crate for guidance on how handle this unexpected cfg
+   = help: the macro `$crate::custom_heap_default` may come from an old version of the `solana_program_entrypoint` crate, try updating your dependency with `cargo update -p solana_program_entrypoint`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `$crate::custom_heap_default` which comes from the expansion of the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `custom-panic`
+  --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:44:1
+   |
+44 | #[program]
+   | ^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `$crate::custom_panic_default` crate for guidance on how handle this unexpected cfg
+   = help: the macro `$crate::custom_panic_default` may come from an old version of the `solana_program_entrypoint` crate, try updating your dependency with `cargo update -p solana_program_entrypoint`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `$crate::custom_panic_default` which comes from the expansion of the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `solana`
+  --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:44:1
+   |
+44 | #[program]
+   | ^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `redox`, `rtems`, `solaris`, `solid_asp3`, `teeos`, `trusty`, `tvos`, and `uefi` and 9 more
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `$crate::custom_panic_default` crate for guidance on how handle this unexpected cfg
+   = help: the macro `$crate::custom_panic_default` may come from an old version of the `solana_program_entrypoint` crate, try updating your dependency with `cargo update -p solana_program_entrypoint`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `$crate::custom_panic_default` which comes from the expansion of the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+  --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:44:1
+   |
+44 | #[program]
+   | ^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = note: using a cfg inside a attribute macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `program` crate for guidance on how handle this unexpected cfg
+   = help: the attribute macro `program` may come from an old version of the `anchor_attribute_program` crate, try updating your dependency with `cargo update -p anchor_attribute_program`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the attribute macro `program` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+  --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:44:1
+   |
+44 | #[program]
+   | ^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+   = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `Accounts` crate for guidance on how handle this unexpected cfg
+   = help: the derive macro `Accounts` may come from an old version of the `anchor_derive_accounts` crate, try updating your dependency with `cargo update -p anchor_derive_accounts`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:125:10
+    |
+125 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Accounts` crate for guidance on how handle this unexpected cfg
+    = help: the derive macro `Accounts` may come from an old version of the `anchor_derive_accounts` crate, try updating your dependency with `cargo update -p anchor_derive_accounts`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:140:10
+    |
+140 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Accounts` crate for guidance on how handle this unexpected cfg
+    = help: the derive macro `Accounts` may come from an old version of the `anchor_derive_accounts` crate, try updating your dependency with `cargo update -p anchor_derive_accounts`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:170:10
+    |
+170 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Accounts` crate for guidance on how handle this unexpected cfg
+    = help: the derive macro `Accounts` may come from an old version of the `anchor_derive_accounts` crate, try updating your dependency with `cargo update -p anchor_derive_accounts`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:189:10
+    |
+189 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Accounts` crate for guidance on how handle this unexpected cfg
+    = help: the derive macro `Accounts` may come from an old version of the `anchor_derive_accounts` crate, try updating your dependency with `cargo update -p anchor_derive_accounts`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:200:10
+    |
+200 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Accounts` crate for guidance on how handle this unexpected cfg
+    = help: the derive macro `Accounts` may come from an old version of the `anchor_derive_accounts` crate, try updating your dependency with `cargo update -p anchor_derive_accounts`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `anchor-debug`
+   --> /Applications/projects/kaonashi_finalProject/kaonashi-smart-contract/programs/projeto-kaonashi/src/lib.rs:211:10
+    |
+211 | #[derive(Accounts)]
+    |          ^^^^^^^^
+    |
+    = note: expected values for `feature` are: `cpi`, `default`, `idl-build`, `no-entrypoint`, `no-idl`, and `no-log-ix-name`
+    = note: using a cfg inside a derive macro will use the cfgs from the destination crate and not the ones from the defining crate
+    = help: try referring to `Accounts` crate for guidance on how handle this unexpected cfg
+    = help: the derive macro `Accounts` may come from an old version of the `anchor_derive_accounts` crate, try updating your dependency with `cargo update -p anchor_derive_accounts`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: this warning originates in the derive macro `Accounts` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `projeto_kaonashi` (lib) generated 17 warnings (5 duplicates)
+    Finished `bench` profile [optimized] target(s) in 0.92s
+     Running benches/offchain.rs (target/release/deps/offchain-5fcb68a0f8297f98)
+Gnuplot not found, using plotters backend
+
+Loading Groth16 proving key for batch 10 OUTSIDE Criterion measurement...
+Benchmarking groth16/batch_10/proof_generation
+Benchmarking groth16/batch_10/proof_generation: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 30.0s. You may wish to increase target time to 59.4s.
+Benchmarking groth16/batch_10/proof_generation: Collecting 10 samples in estimated 59.395 s (10 iterations)
+Benchmarking groth16/batch_10/proof_generation: Analyzing
+groth16/batch_10/proof_generation
+                        time:   [5.2502 s 5.5534 s 5.8881 s]
+                        change: [-15.410% -10.040% -3.7701%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking groth16/batch_10/local_verification
+Benchmarking groth16/batch_10/local_verification: Warming up for 1.0000 s
+Benchmarking groth16/batch_10/local_verification: Collecting 10 samples in estimated 30.011 s (37k iterations)
+Benchmarking groth16/batch_10/local_verification: Analyzing
+groth16/batch_10/local_verification
+                        time:   [818.86 µs 830.21 µs 839.98 µs]
+                        change: [-3.1475% -1.7563% -0.3801%] (p = 0.04 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+
+Loading Groth16 proving key for batch 50 OUTSIDE Criterion measurement...
+Benchmarking groth16/batch_50/proof_generation
+Benchmarking groth16/batch_50/proof_generation: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 30.0s. You may wish to increase target time to 335.8s.
+Benchmarking groth16/batch_50/proof_generation: Collecting 10 samples in estimated 335.79 s (10 iterations)
+Benchmarking groth16/batch_50/proof_generation: Analyzing
+groth16/batch_50/proof_generation
+                        time:   [33.529 s 34.823 s 36.549 s]
+                        change: [+0.6598% +5.1766% +10.623%] (p = 0.07 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking groth16/batch_50/local_verification
+Benchmarking groth16/batch_50/local_verification: Warming up for 1.0000 s
+Benchmarking groth16/batch_50/local_verification: Collecting 10 samples in estimated 30.030 s (36k iterations)
+Benchmarking groth16/batch_50/local_verification: Analyzing
+groth16/batch_50/local_verification
+                        time:   [819.48 µs 824.19 µs 829.05 µs]
+                        change: [-0.8367% -0.1802% +0.4401%] (p = 0.60 > 0.05)
+                        No change in performance detected.
+
+
+Loading Groth16 proving key for batch 100 OUTSIDE Criterion measurement...
+Benchmarking groth16/batch_100/proof_generation
+Benchmarking groth16/batch_100/proof_generation: Warming up for 1.0000 s
+
+Warning: Unable to complete 10 samples in 30.0s. You may wish to increase target time to 1966.8s.
+Benchmarking groth16/batch_100/proof_generation: Collecting 10 samples in estimated 1966.8 s (10 iterations)
+Benchmarking groth16/batch_100/proof_generation: Analyzing
+groth16/batch_100/proof_generation
+                        time:   [101.89 s 121.18 s 143.05 s]
+                        change: [-11.181% +6.6211% +27.847%] (p = 0.55 > 0.05)
+                        No change in performance detected.
+Benchmarking groth16/batch_100/local_verification
+Benchmarking groth16/batch_100/local_verification: Warming up for 1.0000 s
+Benchmarking groth16/batch_100/local_verification: Collecting 10 samples in estimated 30.035 s (36k iterations)
+Benchmarking groth16/batch_100/local_verification: Analyzing
+groth16/batch_100/local_verification
+                        time:   [822.57 µs 830.44 µs 840.10 µs]
+                        change: [+0.1202% +0.9450% +1.8710%] (p = 0.06 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+

@@ -386,6 +386,7 @@ dependencies = [
  "ark-crypto-primitives-macros",
  "ark-ec 0.5.0",
  "ark-ff 0.5.0",
+ "ark-r1cs-std",
  "ark-relations",
  "ark-serialize 0.5.0",
  "ark-snark",
@@ -397,6 +398,7 @@ dependencies = [
  "merlin",
  "rayon",
  "sha2 0.10.9",
+ "tracing",
 ]
 
 [[package]]
@@ -579,6 +581,23 @@ dependencies = [
  "fnv",
  "hashbrown 0.15.5",
  "rayon",
+]
+
+[[package]]
+name = "ark-r1cs-std"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "941551ef1df4c7a401de7068758db6503598e6f01850bdb2cfdb614a1f9dbea1"
+dependencies = [
+ "ark-ec 0.5.0",
+ "ark-ff 0.5.0",
+ "ark-relations",
+ "ark-std 0.5.0",
+ "educe",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "tracing",
 ]
 
 [[package]]
@@ -2528,9 +2547,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ark-bn254 0.5.0",
+ "ark-crypto-primitives",
  "ark-ec 0.5.0",
  "ark-ff 0.5.0",
  "ark-groth16",
+ "ark-r1cs-std",
  "ark-relations",
  "ark-serialize 0.5.0",
  "ark-std 0.5.0",

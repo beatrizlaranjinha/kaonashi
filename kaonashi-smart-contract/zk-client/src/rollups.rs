@@ -51,10 +51,7 @@ pub fn merkle_root(leaves: Vec<[u8; 32]>) -> [u8; 32] {
     }
 }
 
-pub fn aggregate_votes(
-    plain_votes: &[Vec<u64>],
-    proposal_count: usize,
-) -> Result<Vec<u64>> {
+pub fn aggregate_votes(plain_votes: &[Vec<u64>], proposal_count: usize) -> Result<Vec<u64>> {
     if proposal_count == 0 {
         anyhow::bail!("A votação deve ter pelo menos uma proposta");
     }
@@ -63,10 +60,7 @@ pub fn aggregate_votes(
         anyhow::bail!("O batch deve conter pelo menos um voto");
     }
 
-    if plain_votes
-        .iter()
-        .any(|vote| vote.len() != proposal_count)
-    {
+    if plain_votes.iter().any(|vote| vote.len() != proposal_count) {
         anyhow::bail!("Todos os votos devem ter o mesmo número de propostas");
     }
 

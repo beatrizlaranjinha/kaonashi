@@ -30,3 +30,30 @@ wallet.json
 # IDE
 .vscode/
 .idea/
+
+# ============================================================
+# Private/test wallet material
+# ============================================================
+
+**/test-wallets/
+**/*_secret32.json
+**/*_keypair64.json
+
+# Solana private key files
+**/id.json
+
+# ============================================================
+# Groth16 generated proving keys
+# ============================================================
+
+kaonashi-api/data/groth16/*.bin
+kaonashi-api/data/groth16/old/
+
+# Backups of old generated verifying keys
+kaonashi-smart-contract/programs/projeto-kaonashi/src/old_groth16_keys/
+
+# ============================================================
+# Rust build files
+# ============================================================
+
+**/target/

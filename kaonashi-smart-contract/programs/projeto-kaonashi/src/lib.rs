@@ -3,6 +3,8 @@ use anchor_lang::prelude::*;
 pub mod crypto;
 pub mod election;
 pub mod groth16_verifying_key;
+pub mod groth16_verifying_key_100;
+pub mod groth16_verifying_key_50;
 pub mod proofs;
 pub mod rollups;
 

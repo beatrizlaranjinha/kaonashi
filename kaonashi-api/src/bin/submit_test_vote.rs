@@ -88,6 +88,18 @@ fn main() -> Result<()> {
         .parse::<u8>()
         .context("Usage: cargo run --bin submit_test_vote -- <decade_id>")?;
 
+    let batch_size = env::var("KAONASHI_BATCH_SIZE")
+        .unwrap_or_else(|_| "10".to_string())
+        .parse::<usize>()
+        .context("KAONASHI_BATCH_SIZE must be a positive integer")?;
+
+    if !matches!(batch_size, 10 | 50 | 100) {
+        anyhow::bail!(
+            "Unsupported KAONASHI_BATCH_SIZE {}. This test currently supports 10, 50 or 100.",
+            batch_size
+        );
+    }
+
     let chairperson_secret_key =
         env::var("CHAIRPERSON_SECRET_KEY").context("Missing CHAIRPERSON_SECRET_KEY")?;
 
@@ -98,10 +110,13 @@ fn main() -> Result<()> {
             .to_string()
     });
 
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(None)
+        .build()?;
 
     println!("Starting Kaonashi Scales Up test");
     println!("Decade id: {decade_id}");
+    println!("Configured batch size: {batch_size}");
     println!("Chairperson: {chairperson_public_key}");
 
     create_ballots(&client, &chairperson_public_key, &chairperson_secret_key)?;
@@ -111,21 +126,47 @@ fn main() -> Result<()> {
 
     let wallets: Vec<WalletRecord> = serde_json::from_str(&wallets_json)?;
 
-    if wallets.len() < 10 {
-        anyhow::bail!("This test needs at least 10 wallets");
+    if wallets.len() < batch_size {
+        anyhow::bail!(
+            "This test needs at least {} wallets, but only {} are available",
+            batch_size,
+            wallets.len()
+        );
     }
 
     let public_key = get_elgamal_public_key(&client, decade_id)?;
 
-    // 10 votes with a tie:
+    // Preserve the original 10-vote distribution and repeat it for
+    // larger supported batch sizes.
+    //
+    // Batch 10:
     // movie 0 -> 3 votes
     // movie 1 -> 3 votes
     // movie 2 -> 2 votes
     // movie 3 -> 2 votes
-    let planned_votes = [0usize, 1, 0, 1, 2, 3, 0, 1, 2, 3];
+    //
+    // Batch 50:
+    // movie 0 -> 15 votes
+    // movie 1 -> 15 votes
+    // movie 2 -> 10 votes
+    // movie 3 -> 10 votes
+    const VOTE_PATTERN: [usize; 10] = [0, 1, 0, 1, 2, 3, 0, 1, 2, 3];
 
-    println!("\nSubmitting 10 encrypted votes");
-    println!("Expected tie: movie 0 = 3 votes, movie 1 = 3 votes");
+    let planned_votes = (0..batch_size)
+        .map(|index| VOTE_PATTERN[index % VOTE_PATTERN.len()])
+        .collect::<Vec<usize>>();
+
+    let mut expected_tally = [0usize; 8];
+
+    for movie_index in &planned_votes {
+        expected_tally[*movie_index] += 1;
+    }
+
+    println!("\nSubmitting {} encrypted votes", batch_size);
+    println!(
+        "Expected tie: movie 0 = {} votes, movie 1 = {} votes",
+        expected_tally[0], expected_tally[1]
+    );
 
     for (index, movie_index) in planned_votes.iter().enumerate() {
         let wallet = &wallets[index];
@@ -142,13 +183,22 @@ fn main() -> Result<()> {
             response.batch_submitted,
             response.status
         );
+
+        if !response.accepted {
+            anyhow::bail!(
+                "Vote {} from {} was rejected: {}",
+                index + 1,
+                wallet.wallet_id,
+                response.status
+            );
+        }
     }
 
     println!("\nExpected result before tie resolution:");
-    println!("movie 0 -> 3 votes");
-    println!("movie 1 -> 3 votes");
-    println!("movie 2 -> 2 votes");
-    println!("movie 3 -> 2 votes");
+
+    for (movie_index, votes) in expected_tally.iter().enumerate() {
+        println!("movie {} -> {} votes", movie_index, votes);
+    }
 
     close_election(&client, &chairperson_public_key, &chairperson_secret_key)?;
 
@@ -177,6 +227,7 @@ fn main() -> Result<()> {
     get_results(&client, decade_id)?;
 
     println!("\nKaonashi Scales Up test completed");
+    println!("Batch size tested: {}", batch_size);
     println!("Final winner selected by chairperson: movie 1");
 
     Ok(())

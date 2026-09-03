@@ -33,8 +33,7 @@ fn main() {
     let home = env::var("HOME").expect("HOME environment variable not set");
     let keypair_path = PathBuf::from(home).join(".config/solana/id.json");
 
-    let keypair = read_keypair_file(&keypair_path)
-        .expect("Failed to read Solana keypair");
+    let keypair = read_keypair_file(&keypair_path).expect("Failed to read Solana keypair");
 
     let public_key = keypair.pubkey().to_string();
     let message = admin_message(&public_key, action, decade_id);

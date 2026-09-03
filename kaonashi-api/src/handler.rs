@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use solana_zk_sdk::encryption::elgamal::ElGamalPubkey;
 
 use crate::auth::{create_login_message, verify_chairperson_action, verify_signature};
-use crate::batches::{create_batch_for_decade, MAX_BATCH_SIZE};
+use crate::batches::{configured_batch_size, create_batch_for_decade};
 use crate::blockchain::{
     close_ballot_on_chain, create_all_ballots_on_chain, finalize_election_from_blockchain,
     get_ballot_state_from_blockchain,
@@ -320,9 +320,11 @@ pub async fn submit_vote(
     drop(pending_votes);
 
     // Automatically creates a batch when the batch size is reached.
-    let batch_submitted = if pending_votes_count >= MAX_BATCH_SIZE {
+    let target_batch_size = configured_batch_size();
+
+    let batch_submitted = if pending_votes_count >= target_batch_size {
         match create_batch_for_decade(keeping_votes.as_ref(), vote.decade_id) {
-            Ok(Some(_)) => true,
+            Ok(Some(response)) => response.success,
             Ok(None) => false,
             Err(error) => {
                 println!("Auto flush failed: {}", error);

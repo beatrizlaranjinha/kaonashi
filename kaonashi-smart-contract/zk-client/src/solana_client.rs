@@ -4,7 +4,7 @@ use anchor_client::{
     solana_sdk::{
         commitment_config::CommitmentConfig,
         pubkey::Pubkey,
-        signature::{read_keypair_file, Keypair, Signer},
+        signature::{read_keypair_file, Keypair, Signature, Signer},
     },
     Client, Cluster, Program,
 };
@@ -129,12 +129,12 @@ pub fn submit_rollup_batch(
     batch_size: u64,
     proof: [u8; 256],
     public_inputs: [[u8; 32]; 2],
-) -> Result<()> {
+) -> Result<Signature> {
     if batch_size == 0 {
         return Err(anyhow::anyhow!("Cannot submit an empty rollup batch"));
     }
 
-    program
+    let signature = program
         .request()
         .accounts(projeto_kaonashi::accounts::SubmitRollupBatchAccounts {
             ballot,
@@ -152,7 +152,7 @@ pub fn submit_rollup_batch(
             anyhow::anyhow!("Failed to submit Groth16-verified rollup batch: {}", error)
         })?;
 
-    Ok(())
+    Ok(signature)
 }
 // ============================================================================
 // Fetch ballot
