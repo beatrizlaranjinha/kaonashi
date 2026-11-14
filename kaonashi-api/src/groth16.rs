@@ -26,11 +26,11 @@ use std::{
 // Fixed Groth16 configuration
 // ============================================================================
 
-pub const SUPPORTED_GROTH16_BATCH_SIZES: &[usize] = &[10, 50, 100];
+pub const SUPPORTED_GROTH16_BATCH_SIZES: &[usize] = &[2, 10, 50, 100];
 
 fn proving_key_path(batch_size: usize) -> Result<String, String> {
     match batch_size {
-        10 | 50 | 100 => Ok(format!("data/groth16/batch{}_proving_key.bin", batch_size)),
+        2 | 10 | 50 | 100 => Ok(format!("data/groth16/batch{}_proving_key.bin", batch_size)),
         _ => Err(format!(
             "Unsupported Groth16 batch size: {}. Supported sizes: {:?}",
             batch_size, SUPPORTED_GROTH16_BATCH_SIZES

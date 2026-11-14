@@ -4,6 +4,7 @@ use groth16_solana::groth16::Groth16Verifier;
 
 use crate::{
     crypto::{encrypted_tally_after_vote, validate_ciphertexts},
+    groth16_verifying_key_2::VERIFYING_KEY as VERIFYING_KEY_2,
     groth16_verifying_key::VERIFYING_KEY as VERIFYING_KEY_10,
     groth16_verifying_key_100::VERIFYING_KEY as VERIFYING_KEY_100,
     groth16_verifying_key_50::VERIFYING_KEY as VERIFYING_KEY_50,
@@ -46,7 +47,7 @@ pub fn submit_rollup_batch(
     require!(batch_size > 0, ErrorCode::InvalidBatchSize);
 
     require!(
-        batch_size == 10 || batch_size == 50 || batch_size == 100,
+        batch_size == 2 || batch_size == 10 || batch_size == 50 || batch_size == 100,
         ErrorCode::InvalidBatchSize
     );
 
@@ -56,6 +57,7 @@ pub fn submit_rollup_batch(
     //
     // Each batch size uses its own Groth16 setup:
     //
+    // 2 votes   -> VK2
     // 10 votes  -> VK10
     // 50 votes  -> VK50
     // 100 votes -> VK100
@@ -65,6 +67,7 @@ pub fn submit_rollup_batch(
     // ---------------------------------------------------------
 
     let verifying_key = match batch_size {
+        2 => &VERIFYING_KEY_2,
         10 => &VERIFYING_KEY_10,
         50 => &VERIFYING_KEY_50,
         100 => &VERIFYING_KEY_100,

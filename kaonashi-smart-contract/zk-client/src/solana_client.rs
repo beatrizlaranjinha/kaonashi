@@ -10,7 +10,7 @@ use anchor_client::{
 };
 use anyhow::{anyhow, Result};
 
-pub const PROGRAM_ID: &str = "GmYQgLM5HqrxnVYYsBSUuqXKDBdVV24PsDvLmL5LcGNg";
+pub const PROGRAM_ID: &str = "4wCuCv5qfhhJ47dNCEdA928apqWyRMEVYrjxf7kXpMKZ";
 
 pub type KaonashiProgram = Program<Rc<Keypair>>;
 

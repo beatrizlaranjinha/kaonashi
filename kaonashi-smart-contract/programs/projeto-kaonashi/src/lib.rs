@@ -3,8 +3,9 @@ use anchor_lang::prelude::*;
 pub mod crypto;
 pub mod election;
 pub mod groth16_verifying_key;
-pub mod groth16_verifying_key_100;
+pub mod groth16_verifying_key_2;
 pub mod groth16_verifying_key_50;
+pub mod groth16_verifying_key_100;
 pub mod proofs;
 pub mod rollups;
 
@@ -12,7 +13,7 @@ use crypto::{encrypted_tally_after_vote, validate_ciphertexts, validate_public_k
 use election::ELECTION_OPEN;
 use proofs::verify_encrypted_vote_proofs;
 
-declare_id!("GmYQgLM5HqrxnVYYsBSUuqXKDBdVV24PsDvLmL5LcGNg");
+declare_id!("4wCuCv5qfhhJ47dNCEdA928apqWyRMEVYrjxf7kXpMKZ");
 
 pub const MAX_PROPOSALS: usize = 8;
 pub const MAX_PROPOSAL_NAME: usize = 64;

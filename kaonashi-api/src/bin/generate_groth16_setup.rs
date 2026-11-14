@@ -46,6 +46,9 @@ fn byte_array(bytes: &[u8]) -> String {
 
 fn verifying_key_path(batch_size: usize) -> String {
     match batch_size {
+        2 => { "../kaonashi-smart-contract/programs/projeto-kaonashi/src/groth16_verifying_key_2.rs"
+            .to_string()
+        }
         10 => "../kaonashi-smart-contract/programs/projeto-kaonashi/src/groth16_verifying_key.rs"
             .to_string(),
         50 => {
